@@ -1,0 +1,86 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+*.pyd
+*.dll
+
+# Virtual environments
+venv/
+.env/
+.venv/
+env/
+ENV/
+conversion_env/
+
+# Local models / large data
+DocLayout-YOLO/
+Qwen2.5-3B-Instruct/
+Qwen2.5-VL-3B/
+models/
+checkpoints/
+chatbot_data/
+uploads/
+test_frame_extracted/
+pdfs_check/
+*.pt
+*.pth
+*.onnx
+
+# Node / Next.js
+node_modules/
+.next/
+npm-debug.log*
+pnpm-lock.yaml
+yarn.lock
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Logs and debug
+*.log
+*.out
+*.err
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+pytest_cache/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables / secrets
+*.env
+*.conversion_env
+*.env.*
+.env.local
+
+# Generated files / PDFs outputs (tùy bạn có dùng hay không)
+output/
+outputs/
+tmp/
+temp/

@@ -1,0 +1,36 @@
+
+torch
+torchvision
+torchaudio
+
+numpy
+
+transformers>=4.45.0,<5.0.0
+accelerate>=1.0.0
+huggingface_hub>=0.23.0
+
+surya-ocr>=0.17.0
+qwen-vl-utils
+markdown
+htmldocx
+
+python-docx
+PyMuPDF>=1.24.0
+pdf2image
+opencv-python>=4.10.0
+Pillow>=10.0.0
+
+ultralytics>=8.3.0
+
+pdf2docx
+
+# Backend API & file upload
+fastapi
+uvicorn[standard]
+sentence-transformers
+faiss-cpu
+python-multipart
+
+# Cài local DocLayout-YOLO ở chế độ editable (phục vụ develop)
+-e ./DocLayout-YOLO
+
