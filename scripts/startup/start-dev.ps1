@@ -1,4 +1,8 @@
 # PowerShell script to start both frontend and backend
+# Project root = parent of parent of this script (scripts/startup)
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+Set-Location $ProjectRoot
+
 Write-Host "Starting PDF Processing UI Development Server..." -ForegroundColor Green
 Write-Host ""
 
@@ -6,14 +10,14 @@ Write-Host ""
 $envPath = $env:VIRTUAL_ENV
 if (-not $envPath) {
     Write-Host "Warning: Virtual environment not detected. Activating conversion_env..." -ForegroundColor Yellow
-    if (Test-Path ".\conversion_env\Scripts\Activate.ps1") {
-        & .\conversion_env\Scripts\Activate.ps1
+    if (Test-Path "$ProjectRoot\conversion_env\Scripts\Activate.ps1") {
+        & "$ProjectRoot\conversion_env\Scripts\Activate.ps1"
     }
 }
 
-# Start backend in new window
+# Start backend in new window (ensure it runs in project root)
 Write-Host "Starting Backend (FastAPI) on port 8000..." -ForegroundColor Yellow
-$backendCmd = "cd '$PSScriptRoot'; if (Test-Path '.\conversion_env\Scripts\Activate.ps1') { .\conversion_env\Scripts\Activate.ps1 }; uvicorn api:app --port 8000 --reload"
+$backendCmd = "Set-Location '$ProjectRoot'; if (Test-Path '$ProjectRoot\conversion_env\Scripts\Activate.ps1') { & '$ProjectRoot\conversion_env\Scripts\Activate.ps1' }; uvicorn api:app --port 8000 --reload"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $backendCmd
 
 # Wait a bit for backend to start

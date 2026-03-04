@@ -31,6 +31,7 @@ sentence-transformers
 faiss-cpu
 python-multipart
 
-# Cài local DocLayout-YOLO ở chế độ editable (phục vụ develop)
--e ./DocLayout-YOLO
+# DocLayout-YOLO: not in repo (see README). After cloning DocLayout-YOLO into project root, run:
+#   pip install -e ./DocLayout-YOLO
+# -e ./DocLayout-YOLO
 

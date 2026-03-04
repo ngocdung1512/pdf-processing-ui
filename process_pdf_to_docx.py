@@ -1392,6 +1392,8 @@ def process_pdf_to_docx(
     # Step 7: Save document
     print(f"\n[Step 7] Saving Word document...")
     try:
+        output_path = Path(output_docx)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(output_docx))
         print(f"  ✓ Saved to: {output_docx}")
     except PermissionError:

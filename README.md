@@ -13,6 +13,25 @@
 
 ## Hướng dẫn cài đặt và chạy ứng dụng
 
+### 📥 Clone từ GitHub (máy mới)
+
+Nếu bạn clone repo về máy mới:
+
+```bash
+git clone <url-repo-của-bạn> pdf-processing-ui
+cd pdf-processing-ui
+```
+
+Sau đó làm theo **Cài đặt lần đầu** bên dưới (tạo venv, `pip install -r requirements.txt`, `npm install`).
+
+**Lưu ý:** Thư mục `DocLayout-YOLO` và file model `.pt` **không** nằm trong repo (do dung lượng lớn / .gitignore). Để dùng **chế độ OCR (AI)** bạn cần:
+
+1. Clone [DocLayout-YOLO](https://github.com/naver-ai/doclayout) (hoặc repo chứa YOLOv10 doclayout) vào thư mục gốc project, đổi tên thư mục thành `DocLayout-YOLO`.
+2. Cài editable: `pip install -e ./DocLayout-YOLO`
+3. Đặt file model `doclayout_yolo_docstructbench_imgsz1024.pt` vào thư mục gốc project (hoặc chỉ đường dẫn bằng tham số `--model` khi chạy).
+
+Nếu chỉ cần **chế độ Layout** (PDF văn bản) có thể bỏ qua DocLayout-YOLO và vẫn chạy được phần chuyển đổi layout.
+
 ### ⚡ Quick Start (Nếu đã có môi trường ảo `conversion_env`)
 
 Nếu folder `conversion_env` đã tồn tại, chỉ cần:
@@ -296,16 +315,14 @@ huggingface-cli download Qwen/Qwen2.5-7B-Instruct
 
 ### Bước 4: Kiểm tra cài đặt
 
-Chạy script kiểm tra:
+Kiểm tra models đã tải đúng chưa:
 
 ```bash
-python check_model_status.py
-```
+# Kiểm tra embedding model
+python -c "from sentence_transformers import SentenceTransformer; m = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'); print('Embedding OK')"
 
-Hoặc kiểm tra thủ công:
-
-```bash
-python test_model.py
+# Kiểm tra LLM (Qwen)
+python -c "from transformers import AutoTokenizer, AutoModelForCausalLM; AutoTokenizer.from_pretrained('Qwen/Qwen2.5-7B-Instruct', trust_remote_code=True); print('LLM OK')"
 ```
 
 ### Bước 5: Chạy Chatbot
@@ -339,7 +356,7 @@ Sau đó truy cập: `http://localhost:3000/chatbot`
 #### Lỗi: "Models not found" hoặc "Embedding model not loaded"
 - Đảm bảo đã tải models theo hướng dẫn trên
 - Kiểm tra kết nối internet lần đầu (để tải models)
-- Chạy lại: `python check_model_status.py` để kiểm tra
+- Chạy lại các lệnh kiểm tra ở Bước 4 (phần Kiểm tra cài đặt) để xác nhận models
 
 #### Lỗi: "Out of memory" khi load model
 - Đảm bảo có đủ RAM (tối thiểu 16GB)
