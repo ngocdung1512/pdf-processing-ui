@@ -13,6 +13,8 @@
 
 ## Hướng dẫn cài đặt và chạy ứng dụng
 
+> **Máy mới / clone lần đầu:** Xem **[HUONG_DAN_CAI_DAT_MAY_MOI.md](./HUONG_DAN_CAI_DAT_MAY_MOI.md)** để có hướng dẫn chi tiết từ Git clone đến khi chạy được.
+
 ### 📥 Clone từ GitHub (máy mới)
 
 Nếu bạn clone repo về máy mới:

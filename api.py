@@ -44,7 +44,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 # In-memory job store
 # ===============================
 JOB_PROGRESS = {}   # job_id -> {current, total, percent, elapsed_time, start_time, pdf_type}
-JOB_STATUS = {}     # job_id -> running | done | error
+JOB_STATUS = {}     # job_id -> running | done | error | cancelled
 
 
 def detect_pdf_type(pdf_path: Path) -> str:
@@ -407,6 +407,118 @@ async def convert_pdf(file: UploadFile = File(...)):
     return {"job_id": job_id, "pdf_type": pdf_type_display}
 
 
+@app.post("/convert_basic")
+async def convert_basic_pdf(file: UploadFile = File(...)):
+    """
+    Basic OCR/Text extraction:
+    - Chỉ trích xuất text, không giữ bố cục.
+    - Hỗ trợ cả PDF text và PDF scan.
+      + PDF text: trích xuất trực tiếp bằng PyMuPDF (rất nhanh).
+      + PDF scan: dùng pipeline OCR hiện tại (convert_pdf_gpu.py), sau đó lấy text đơn giản.
+    """
+    temp_id = str(uuid.uuid4())
+    pdf_path = UPLOAD_DIR / f"basic_{temp_id}.pdf"
+    output_docx = UPLOAD_DIR / f"basic_{temp_id}.docx"
+
+    # Save uploaded PDF
+    with open(pdf_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    # Detect PDF type (scan / text)
+    pdf_type = detect_pdf_type(pdf_path)
+
+    text: str = ""
+
+    if pdf_type == "scan":
+        # ===== PDF scan: dùng pipeline OCR có sẵn để tạo DOCX tạm, rồi rút text ra =====
+        scripts_dir = BASE_DIR / "scripts"
+        script_path = scripts_dir / "convert_pdf_gpu.py"
+        if not script_path.exists():
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": f"Không tìm thấy script OCR: {script_path}. Vui lòng kiểm tra thư mục scripts."
+                },
+            )
+
+        temp_layout_docx = UPLOAD_DIR / f"basic_{temp_id}_layout.docx"
+
+        cmd = [
+            sys.executable,
+            "-u",
+            str(script_path),
+            str(pdf_path),
+            "--output",
+            str(temp_layout_docx),
+        ]
+
+        print(f"[INFO] Basic OCR (scan) - running command: {' '.join(cmd)}", flush=True)
+
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
+
+        process = Popen(
+            cmd,
+            stdout=PIPE,
+            stderr=STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=0,
+            universal_newlines=True,
+            env=env,
+            cwd=str(BASE_DIR),
+        )
+
+        # In basic mode chúng ta không parse progress, chỉ log ra để debug
+        ocr_logs = []
+        for line in process.stdout:
+            ocr_logs.append(line)
+            print(line, end="", flush=True)
+
+        process.wait()
+
+        if process.returncode != 0 or not temp_layout_docx.exists():
+            print(f"[ERROR] Basic OCR scan failed, return code: {process.returncode}", flush=True)
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "OCR cơ bản cho PDF scan thất bại. Vui lòng thử lại hoặc dùng chế độ OCR nâng cao."
+                },
+            )
+
+        # Lấy text từ DOCX tạm
+        text = extract_text_from_docx(temp_layout_docx)
+    else:
+        # ===== PDF text: trích xuất trực tiếp (nhanh) =====
+        text = extract_text_from_pdf(pdf_path)
+
+    if not text.strip():
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "Không trích xuất được văn bản từ PDF. Vui lòng thử lại hoặc sử dụng chế độ OCR nâng cao."
+            },
+        )
+
+    try:
+        create_plain_docx_from_text(text, output_docx)
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Lỗi khi tạo file DOCX đơn giản: {e}"},
+        )
+
+    filename_stem = Path(file.filename).stem if file.filename else "result"
+
+    return FileResponse(
+        output_docx,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"{filename_stem}_basic.docx",
+    )
+
+
 @app.get("/progress/{job_id}")
 def get_progress(job_id: str):
     if job_id not in JOB_STATUS:
@@ -448,6 +560,20 @@ def get_result(job_id: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename="result.docx"
     )
+
+
+@app.post("/cancel/{job_id}")
+def cancel_job(job_id: str):
+    """Đánh dấu hủy job phía backend (không chờ subprocess kết thúc)."""
+    if job_id not in JOB_STATUS:
+        return JSONResponse(status_code=404, content={"error": "Job not found"})
+
+    JOB_STATUS[job_id] = "cancelled"
+    progress_data = JOB_PROGRESS.get(job_id)
+    if progress_data is not None:
+        progress_data["status"] = "cancelled"
+
+    return {"status": "cancelled"}
 
 
 # ===============================
@@ -699,6 +825,21 @@ def extract_text_from_pdf(pdf_path: Path) -> str:
     except Exception as e:
         print(f"[ERROR] Failed to extract text from PDF: {e}", flush=True)
         return ""
+
+
+def create_plain_docx_from_text(text: str, output_path: Path) -> None:
+    """Create a simple DOCX containing only plain text paragraphs."""
+    try:
+        from docx import Document  # Imported here to avoid global import if not needed
+
+        doc = Document()
+        # Split text into lines, keep empty lines as paragraph breaks
+        for line in text.splitlines():
+            doc.add_paragraph(line)
+        doc.save(output_path)
+    except Exception as e:
+        print(f"[ERROR] Failed to create plain DOCX: {e}", flush=True)
+        raise
 
 
 def extract_text_from_docx(docx_path: Path) -> str:
