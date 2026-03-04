@@ -28,6 +28,8 @@ test_frame_extracted/
 pdfs_check/
 *.pt
 *.pth
+# Allow the YOLO doclayout model used by this project (tracked in repo)
+!doclayout_yolo_docstructbench_imgsz1024.pt
 *.onnx
 
 # Node / Next.js

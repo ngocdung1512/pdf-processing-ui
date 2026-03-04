@@ -1,0 +1,2 @@
+# Track large model file with Git LFS (GitHub limit 100MB per file)
+doclayout_yolo_docstructbench_imgsz1024.pt filter=lfs diff=lfs merge=lfs -text
