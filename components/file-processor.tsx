@@ -166,19 +166,23 @@ function BasicOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
   }
 
   return (
-    <div className={`bg-white rounded-2xl border border-dashed border-gray-200 p-6 md:p-8 transition-all shadow-sm relative overflow-hidden h-full ${isLocked ? "opacity-60" : ""}`}>
-      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-sky-500 to-blue-500 opacity-20" />
+    <div className={`bg-white rounded-2xl border border-dashed border-sky-100 p-6 md:p-8 transition-all shadow-sm hover:shadow-md relative overflow-hidden h-full ${isLocked ? "opacity-60" : ""}`}>
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-400 via-cyan-400 to-sky-300 opacity-40" />
 
       <div className={`flex flex-col items-center justify-center text-center space-y-5 ${isLocked ? "pointer-events-none" : ""}`}>
-        <h2 className="text-xl font-bold text-gray-800 mb-2">OCR cơ bản</h2>
+        <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+          Chế độ cơ bản
+        </div>
+        <h2 className="text-xl font-bold text-gray-800 mb-1">OCR cơ bản</h2>
         <p className="text-sm text-gray-500 max-w-md">
           Hỗ trợ cả PDF văn bản và PDF scan. Hệ thống chỉ trích xuất nội dung chữ, không giữ bố cục, bảng hay hình ảnh.
         </p>
 
         {!file && (
           <>
-            <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center mb-2 border border-gray-100">
-              <FileText className="w-7 h-7 text-gray-400" />
+            <div className="w-12 h-12 bg-sky-50 rounded-2xl flex items-center justify-center mb-2 border border-sky-100">
+              <FileText className="w-7 h-7 text-sky-500" />
             </div>
             <input
               type="file"
@@ -207,24 +211,38 @@ function BasicOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
                   <X className="w-4 h-4" />
                 </button>
               </span>
-              <p className="text-xs text-gray-500">File đã sẵn sàng để xử lý nhanh.</p>
+              <p className="text-xs text-gray-500">
+                {resultBlob && !isProcessing
+                  ? "Đã xử lý xong. Bạn có thể tải DOCX hoặc tải lên tệp khác."
+                  : "File đã sẵn sàng để xử lý nhanh."}
+              </p>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
-              <Button
-                onClick={handleProcessBasic}
-                className="bg-[#0060ac] hover:bg-[#004d8a] text-white px-4 py-3 rounded-md text-sm font-bold"
-                disabled={isProcessing}
-              >
-                {isProcessing ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Đang xử lý...
-                  </span>
-                ) : (
-                  "Xử lý nhanh (OCR cơ bản)"
-                )}
-              </Button>
+              {resultBlob && !isProcessing ? (
+                <Button
+                  onClick={reset}
+                  className="bg-[#1a1a1a] hover:bg-black text-white px-4 py-3 rounded-md text-sm font-bold"
+                  disabled={isProcessing}
+                >
+                  Tải lên tệp khác
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleProcessBasic}
+                  className="bg-[#0060ac] hover:bg-[#004d8a] text-white px-4 py-3 rounded-md text-sm font-bold"
+                  disabled={isProcessing}
+                >
+                  {isProcessing ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Đang xử lý...
+                    </span>
+                  ) : (
+                    "Xử lý nhanh (OCR cơ bản)"
+                  )}
+                </Button>
+              )}
 
               {resultBlob && (
                 <Button
@@ -378,11 +396,15 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
             if (isMounted) {
               setResultBlob(blob)
               setState("completed")
+              // Hoàn tất xử lý → mở khóa chế độ còn lại
+              onUnlock()
             }
           } else {
             if (isMounted) {
               setState("error")
               setErrorMessage("Không thể tải file kết quả. Vui lòng thử lại.")
+              // Lỗi khi tải file kết quả → cũng mở khóa để người dùng chọn lại
+              onUnlock()
             }
           }
         } else if (data.status === "error") {
@@ -394,6 +416,8 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
             } else {
               setErrorMessage("Đã xảy ra lỗi khi xử lý file. Vui lòng thử lại.")
             }
+            // Có lỗi từ backend → mở khóa chế độ còn lại
+            onUnlock()
           }
         } else {
           // Continue polling if still running
@@ -519,11 +543,23 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
   }
 
   return (
-    <div className={`bg-white rounded-2xl border border-dashed border-gray-200 p-6 md:p-8 transition-all shadow-sm relative overflow-hidden h-full ${isLocked ? "opacity-60" : ""}`}>
-      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 via-blue-500 to-red-500 opacity-20" />
+    <div
+      className={`relative h-full overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-6 md:p-8 shadow-md transition-all ${
+        isLocked ? "opacity-60" : "hover:shadow-lg hover:-translate-y-0.5"
+      }`}
+    >
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-sky-500 to-indigo-400 opacity-60" />
 
-      <div className={`flex flex-col items-center justify-center text-center space-y-5 ${isLocked ? "pointer-events-none" : ""}`}>
-        <h2 className="text-xl font-bold text-gray-800 mb-2">OCR nâng cao (giữ bố cục)</h2>
+      <div
+        className={`flex flex-col items-center justify-center text-center space-y-5 ${
+          isLocked ? "pointer-events-none" : ""
+        }`}
+      >
+        <div className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-3 py-1 text-[11px] font-semibold text-indigo-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+          Chế độ nâng cao · Khuyến nghị
+        </div>
+        <h2 className="text-xl font-bold text-gray-900 mb-1">OCR nâng cao (giữ bố cục)</h2>
         <p className="text-sm text-gray-500 max-w-md">
           Phù hợp với PDF scan hoặc tài liệu phức tạp. Hỗ trợ giữ bố cục văn bản gần đúng theo bố cục gốc.
         </p>
