@@ -3,9 +3,9 @@ import { FileProcessor } from "@/components/file-processor"
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-[#f8f9fa] flex flex-col">
+    <main className="min-h-screen bg-[#f8f9fa] flex flex-col pt-24">
       <Header />
-      <div className="container mx-auto px-4 flex-1 flex flex-col justify-center py-8">
+      <div className="container mx-auto px-4 flex-1 flex flex-col justify-center pb-8">
         <div className="text-center mb-6">
           <h1 className="text-3xl md:text-4xl font-bold text-[#1a1a1a] mb-3 leading-relaxed">
             Chuyển đổi văn bản nội bộ PDF sang DOCX

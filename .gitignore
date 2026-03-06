@@ -18,11 +18,9 @@ conversion_env/
 
 # Local models / large data
 DocLayout-YOLO/
-Qwen2.5-3B-Instruct/
 Qwen2.5-VL-3B/
 models/
 checkpoints/
-chatbot_data/
 uploads/
 test_frame_extracted/
 pdfs_check/

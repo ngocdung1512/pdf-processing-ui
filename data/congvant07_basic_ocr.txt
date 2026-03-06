@@ -1,0 +1,1 @@
+Không trích xuất được văn bản từ PDF. Thử tăng --dpi (ví dụ 200) hoặc dùng chế độ OCR nâng cao.

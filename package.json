@@ -5,9 +5,11 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "dev:open": "next dev & timeout /t 5 /nobreak > nul & start http://localhost:3000/chatbot",
+    "dev:open": "next dev & timeout /t 5 /nobreak > nul & start http://localhost:3000",
     "dev:all": "concurrently -n \"Frontend,Backend\" -c \"blue,green\" \"npm run dev\" \"uvicorn api:app --port 8000 --reload\"",
     "dev:backend": "uvicorn api:app --port 8000 --reload",
+    "dev:chatbot": "cd OCR_LLM && npm run dev:all",
+    "chatbot:setup": "cd OCR_LLM && npm run setup",
     "lint": "eslint .",
     "start": "next start"
   },

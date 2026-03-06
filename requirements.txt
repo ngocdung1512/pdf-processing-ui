@@ -1,14 +1,18 @@
+# PDF processing UI - Python dependencies
+# Install: pip install -r requirements.txt (inside conversion_env)
 
 torch
 torchvision
 torchaudio
-
 numpy
 
 transformers>=4.45.0,<5.0.0
 accelerate>=1.0.0
 huggingface_hub>=0.23.0
 
+# OCR: basic (ocr_basic.py) + advanced (scripts)
+paddleocr
+vietocr
 surya-ocr>=0.17.0
 qwen-vl-utils
 markdown
@@ -19,19 +23,12 @@ PyMuPDF>=1.24.0
 pdf2image
 opencv-python>=4.10.0
 Pillow>=10.0.0
-
 ultralytics>=8.3.0
-
 pdf2docx
 
-# Backend API & file upload
+# Backend API
 fastapi
 uvicorn[standard]
-sentence-transformers
-faiss-cpu
 python-multipart
 
-# DocLayout-YOLO: not in repo (see README). After cloning DocLayout-YOLO into project root, run:
-#   pip install -e ./DocLayout-YOLO
-# -e ./DocLayout-YOLO
-
+# DocLayout-YOLO: not in repo. For OCR nâng cao (scan), clone into project root then: pip install -e ./DocLayout-YOLO

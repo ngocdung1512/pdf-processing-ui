@@ -25,6 +25,13 @@ REM Start frontend in new window
 echo [3/3] Starting Frontend (Next.js) on port 3000...
 start "Next.js Frontend - Port 3000" cmd /k "cd /d %CD% && npm run dev && timeout /t 10"
 
+REM Also start AnythingLLM servers in background (no browser)
+if exist "scripts\startup\start-chatbot-core.bat" (
+    echo.
+    echo Starting AnythingLLM OCR_LLM servers in background...
+    start "AnythingLLM Startup" cmd /k "cd /d %CD% && call scripts\startup\start-chatbot-core.bat"
+)
+
 REM Wait for frontend to start
 echo Waiting for frontend server to be ready...
 timeout /t 8 /nobreak > nul
@@ -37,9 +44,10 @@ start "" "http://localhost:3000"
 
 echo.
 echo ========================================
-echo  Both servers are running!
-echo  Frontend: http://localhost:3000
-echo  Backend:  http://localhost:8000
+echo  App servers are running!
+echo  Frontend:  http://localhost:3000
+echo  Backend:   http://localhost:8000
+echo  Chatbot:   (optional) run start-chatbot.bat, then open http://localhost:3002
 echo ========================================
 echo.
 echo Both servers are running in separate windows.

@@ -10,9 +10,7 @@ Tài liệu này hướng dẫn **từng bước** từ lúc clone repo đến k
 |-----------|--------|------------------------|
 | **PDF → DOCX (Layout + OCR)** | `doclayout_yolo_docstructbench_imgsz1024.pt` | **Đi kèm repo** — clone có Git LFS là có file (không cần tải thêm). |
 | **PDF → DOCX chế độ OCR (AI)** | **Qwen2.5-VL** (vd: Qwen2.5-VL-3B) | **Cần tải thủ công** — không có trong repo. Tải từ Hugging Face, đặt vào thư mục gốc project (vd: `Qwen2.5-VL-3B`) hoặc chỉ đường dẫn khi chạy. |
-| **Chatbot (RAG)** | Embedding (Qwen2.5-0.5B / sentence-transformers) + **Qwen2.5-3B-Instruct** | **Tự tải lần đầu** khi mở Chatbot (cần mạng). Hoặc tải trước: `huggingface-cli download Qwen/Qwen2.5-3B-Instruct`. |
 
-**Tóm tắt:** Chỉ cần **tải thêm Qwen2.5-VL** (vd. Qwen2.5-VL-3B) nếu bạn dùng **chế độ OCR (AI)** cho PDF scan. File `.pt` và Chatbot models (nếu có mạng lần đầu) không cần tải thủ công.
 
 ---
 

@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useRef, useEffect } from "react"
-import { FileText, CheckCircle2, Download, X, Loader2, Lock } from "lucide-react"
+import { FileText, CheckCircle2, Download, X, Loader2, Lock, MessageCircle } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { apiUrl } from "@/lib/api"
@@ -292,7 +292,7 @@ export function FileProcessor() {
   const [activeMode, setActiveMode] = useState<"none" | "basic" | "advanced">("none")
 
   return (
-    <div className="grid gap-4 lg:gap-6 lg:grid-cols-2 h-full">
+    <div className="grid gap-4 lg:gap-6 lg:grid-cols-3 h-full">
       <BasicOcrCard
         isLocked={activeMode === "advanced"}
         onLock={() => setActiveMode("basic")}
@@ -303,6 +303,45 @@ export function FileProcessor() {
         onLock={() => setActiveMode("advanced")}
         onUnlock={() => setActiveMode((m) => (m === "advanced" ? "none" : m))}
       />
+      <ChatbotCard />
+    </div>
+  )
+}
+
+function ChatbotCard() {
+  return (
+    <div className="bg-white rounded-2xl border border-dashed border-emerald-100 p-6 md:p-8 transition-all shadow-sm hover:shadow-md relative overflow-hidden h-full">
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-400 via-sky-400 to-emerald-300 opacity-40" />
+
+      <div className="flex flex-col items-center justify-center text-center space-y-5">
+        <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          Chế độ chatbot
+        </div>
+        <h2 className="text-xl font-bold text-gray-800 mb-1">Trợ lý chatbot văn bản</h2>
+        <p className="text-sm text-gray-500 max-w-md">
+          Chatbot hỗ trợ giải đáp thắc mắc về văn bản hành chính, tóm tắt, giải thích nội dung và gợi ý soạn thảo sau khi bạn
+          chuyển đổi tài liệu.
+        </p>
+
+        <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mb-2 border border-emerald-100">
+          <MessageCircle className="w-7 h-7 text-emerald-500" />
+        </div>
+
+        <a
+          href="http://localhost:3002"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center bg-[#0060ac] hover:bg-[#004d8a] text-white px-4 py-3 rounded-md text-sm font-semibold gap-2"
+        >
+          <MessageCircle className="w-4 h-4" />
+          Mở trợ lý chatbot
+        </a>
+
+        <p className="text-[11px] text-gray-400">
+          Lưu ý: Yêu cầu môi trường chatbot (AnythingLLM) đang được khởi động trong nền.
+        </p>
+      </div>
     </div>
   )
 }
@@ -557,7 +596,7 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
       >
         <div className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-3 py-1 text-[11px] font-semibold text-indigo-700">
           <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-          Chế độ nâng cao · Khuyến nghị
+          Chế độ nâng cao
         </div>
         <h2 className="text-xl font-bold text-gray-900 mb-1">OCR nâng cao (giữ bố cục)</h2>
         <p className="text-sm text-gray-500 max-w-md">
@@ -592,17 +631,17 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
               <FileText className="w-7 h-7 text-blue-500" />
             </div>
             <div className="flex flex-col items-center">
-              <span className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+              <span className="text-sm font-semibold text-gray-800 flex items-center gap-2">
                 {fileName}
                 <button onClick={reset} className="text-gray-400 hover:text-red-500">
                   <X className="w-4 h-4" />
                 </button>
               </span>
-              <p className="text-sm text-gray-500 mt-1">Đã sẵn sàng xử lý</p>
+              <p className="text-xs text-gray-500 mt-1">Đã sẵn sàng xử lý</p>
             </div>
             <Button
               onClick={handleProcess}
-              className="bg-[#0060ac] hover:bg-[#004d8a] text-white px-8 py-4 rounded-md text-base font-bold w-full max-w-xs"
+              className="bg-[#0060ac] hover:bg-[#004d8a] text-white px-4 py-3 rounded-md text-sm font-bold w-full max-w-xs"
             >
               Xử lý
             </Button>
@@ -610,7 +649,7 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
         )}
 
         {state === "processing" && (
-          <div className="w-full max-w-md space-y-6">
+          <div className="w-full max-w-md space-y-4">
             {fileName && (
               <div className="flex items-center justify-center gap-2 text-sm text-gray-700">
                 <span className="font-medium truncate max-w-[260px]" title={fileName}>
@@ -625,29 +664,29 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
                 </button>
               </div>
             )}
-            <div className="flex items-center justify-center gap-3 text-blue-600 font-bold text-lg">
-              <Loader2 className="w-5 h-5 animate-spin" />
-              Đang xử lý... {progress}%
+            <div className="flex items-center justify-center gap-2 text-xs font-semibold text-blue-600">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Đang xử lý... {progress}%</span>
             </div>
             {pdfType && (
-              <p className="text-gray-700 font-semibold text-lg">
+              <p className="text-[11px] text-gray-700 font-semibold">
                 {pdfType === "scan" ? "PDF Scan" : "PDF Text"}
               </p>
             )}
-            <Progress value={progress} className="h-4 rounded-full bg-gray-100 border border-gray-200" />
+            <Progress value={progress} className="h-3 rounded-full bg-gray-100 border border-gray-200" />
             {pdfType === "scan" && progressInfo && (
-              <p className="text-gray-500 italic">
+              <p className="text-[11px] text-gray-500 italic">
                 Recognizing Text: {progressInfo.current}/{progressInfo.total} pages
               </p>
             )}
             {pdfType === "scan" && !progressInfo && (
-              <p className="text-gray-500 italic">Đang khởi tạo quá trình xử lý...</p>
+              <p className="text-[11px] text-gray-500 italic">Đang khởi tạo quá trình xử lý...</p>
             )}
             {pdfType === "text" && (
-              <p className="text-gray-500 italic">Đang chuyển đổi và giữ nguyên bố cục...</p>
+              <p className="text-[11px] text-gray-500 italic">Đang chuyển đổi và giữ nguyên bố cục...</p>
             )}
             {elapsedTime > 0 && (
-              <p className="text-gray-600 font-medium">
+              <p className="text-[11px] text-gray-600">
                 Thời gian xử lý: {formatElapsedTime(elapsedTime)}
               </p>
             )}
@@ -660,13 +699,13 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
               <CheckCircle2 className="w-7 h-7 text-green-500" />
             </div>
             <div className="space-y-2">
-              <h3 className="text-2xl font-bold text-gray-800">Xử lý thành công!</h3>
-              <p className="text-gray-500">{fileName} đã sẵn sàng để tải về.</p>
+              <h3 className="text-lg font-bold text-gray-800">Xử lý thành công!</h3>
+              <p className="text-xs text-gray-500">{fileName} đã sẵn sàng để tải về.</p>
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
               <Button
                 onClick={handleDownload}
-                className="bg-green-600 hover:bg-green-700 text-white px-6 py-4 rounded-md text-base font-bold flex items-center gap-2"
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-md text-sm font-bold flex items-center gap-2"
               >
                 <Download className="w-5 h-5" />
                 Tải về
@@ -674,13 +713,13 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
               <Button
                 variant="outline"
                 onClick={reset}
-                className="px-6 py-4 rounded-md text-base font-bold border-2 bg-transparent"
+                className="px-4 py-3 rounded-md text-sm font-bold border-2 bg-transparent"
               >
                 Tải lên tệp khác
               </Button>
             </div>
             {elapsedTime > 0 && (
-              <p className="text-gray-600 text-sm font-medium mt-2">
+              <p className="text-[11px] text-gray-600 mt-2">
                 Thời gian xử lý: {formatElapsedTime(elapsedTime)}
               </p>
             )}
@@ -690,10 +729,10 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
         {state === "error" && (
           <>
             <div className="text-center space-y-4">
-              <p className="text-red-600 font-bold text-xl">Xử lý thất bại</p>
+              <p className="text-red-600 font-bold text-lg">Xử lý thất bại</p>
               {errorMessage && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-w-2xl mx-auto">
-                  <p className="text-red-800 text-sm whitespace-pre-wrap break-words">
+                  <p className="text-red-800 text-xs whitespace-pre-wrap break-words">
                     {errorMessage}
                   </p>
                 </div>
@@ -701,12 +740,12 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
               <div className="flex gap-3 justify-center">
                 <Button 
                   onClick={reset}
-                  className="px-6 py-4 rounded-md text-base font-bold bg-blue-600 hover:bg-blue-700 text-white"
+                  className="px-4 py-3 rounded-md text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   Thử lại
                 </Button>
               </div>
-              <p className="text-gray-500 text-sm mt-4">
+              <p className="text-[11px] text-gray-500 mt-4">
                 💡 Mẹo: Kiểm tra terminal backend để xem log chi tiết về lỗi
               </p>
             </div>

@@ -23,6 +23,13 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", $backendCmd
 # Wait a bit for backend to start
 Start-Sleep -Seconds 3
 
+# Start OCR_LLM chatbot in new window (if exists)
+if (Test-Path "$ProjectRoot\OCR_LLM\package.json") {
+    Write-Host "Starting OCR_LLM Chatbot (AnythingLLM) on port 3002..." -ForegroundColor Yellow
+    $chatbotCmd = "Set-Location '$ProjectRoot'; npm run dev:chatbot"
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", $chatbotCmd
+}
+
 # Start frontend
 Write-Host "Starting Frontend (Next.js) on port 3000..." -ForegroundColor Yellow
 Write-Host "Backend is running in separate window. Press Ctrl+C to stop frontend only." -ForegroundColor Cyan
