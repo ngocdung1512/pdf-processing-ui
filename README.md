@@ -25,6 +25,8 @@ git clone <url-repo-của-bạn> pdf-processing-ui
 cd pdf-processing-ui
 ```
 
+Sau khi clone, repo đã bao gồm **toàn bộ** (app PDF + **OCR_LLM chatbot** trong thư mục `OCR_LLM`). Không cần clone thêm gì.
+
 *(Nếu repo dùng Git LFS cho file model `.pt`, cần cài [Git LFS](https://git-lfs.com/) và chạy `git lfs install` trước khi clone.)*
 
 ### Bước 2: Chuẩn bị môi trường
@@ -90,13 +92,14 @@ npm install
 
 ### Bước 7: (Tuỳ chọn) Cài Chatbot (OCR_LLM / AnythingLLM)
 
-Chỉ cần nếu muốn dùng nút **"Mở trợ lý chatbot"**:
+Code chatbot đã nằm trong repo (thư mục `OCR_LLM`). Nếu muốn dùng nút **"Mở trợ lý chatbot"**, chạy một lần:
 
 ```bash
 npm run chatbot:setup
 ```
 
-*(Cần Yarn: `npm install -g yarn` nếu chưa có. Chi tiết: [OCR_LLM/RUN_IN_PROJECT.md](./OCR_LLM/RUN_IN_PROJECT.md).)*
+(Lệnh này cài dependency + Prisma cho server/frontend/collector trong `OCR_LLM`.)  
+*Cần Yarn: `npm install -g yarn` nếu chưa có. Chi tiết: [OCR_LLM/RUN_IN_PROJECT.md](./OCR_LLM/RUN_IN_PROJECT.md).*
 
 ### Bước 8: Chạy ứng dụng
 
