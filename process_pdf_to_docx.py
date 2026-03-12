@@ -790,7 +790,8 @@ def process_pdf_to_docx(
                     "- Giữ nguyên định dạng gốc của văn bản. Nếu chữ trong ảnh là in đậm, in nghiêng, hoặc gạch chân, hãy dùng thẻ <b>, <i>, <u> tương ứng.\n"
                     "- Nếu là đoạn văn bình thường, dùng thẻ <p>.\n"
                     "- Nếu là danh sách có dấu đầu dòng hoặc đánh số, dùng thẻ <ul> hoặc <ol> cùng với <li>.\n"
-                    "- LƯU Ý QUAN TRỌNG: Chỉ thêm các thẻ định dạng đặc biệt (như <b>, <i>, <ul>) khi bạn nhìn thấy RÕ RÀNG định dạng đó trong ảnh. Nếu nét chữ chỉ hơi đậm hơn một chút do chất lượng in, hãy coi đó là chữ bình thường.\n"
+                    "- Nếu trong ảnh có BẢNG (hàng, cột, ô), dùng <table>, mỗi hàng <tr>, mỗi ô <td> hoặc <th> (tiêu đề). Không chuyển bảng thành danh sách hay đoạn.\n"
+                    "- LƯU Ý: Chỉ thêm thẻ (b, i, ul, table...) khi thấy RÕ RÀNG trong ảnh.\n"
                     "Chỉ xuất ra mã HTML thuần túy, tuyệt đối không giải thích."
                 )
                 messages = [
@@ -798,9 +799,7 @@ def process_pdf_to_docx(
                         "role": "system",
                         "content": [
                             {"type": "text", "text": (
-                                "Bạn là công cụ OCR chuyển đổi ảnh văn bản bản cứng thành HTML. "
-                                "Nhiệm vụ của bạn là nhận diện chính xác văn bản và cấu trúc (như in đậm, in nghiêng, danh sách) rồi xuất ra mã HTML. "
-                                "Trích xuất trung thực, không tự suy diễn thêm định dạng nếu nó không thực sự xuất hiện trong ảnh."
+                                "Bạn là công cụ OCR chuyển ảnh văn bản thành HTML. Nhận diện văn bản và cấu trúc (in đậm, in nghiêng, danh sách, bảng). Khi có bảng phải dùng <table>, <tr>, <td>, <th>. Trích xuất trung thực."
                             )},
                         ],
                     },
@@ -1702,6 +1701,50 @@ def process_pdf_to_docx(
             cloned.alignment = alignment
             _apply_font(cloned)
 
+    def _parse_html_table_to_grid(text):
+        """Parse HTML <table><tr><td>...</td></tr>...</table> into list of rows (list of list of cell text).
+        Returns None if text is not a table, else [[cell1, cell2,...], ...].
+        """
+        if not text or '<table' not in text.lower() or '</tr>' not in text.lower():
+            return None
+        # Strip tbody for easier regex
+        s = re.sub(r'</?tbody\s*>', '', text, flags=re.IGNORECASE)
+        rows = []
+        for tr_match in re.finditer(r'<tr[^>]*>(.*?)</tr>', s, re.DOTALL | re.IGNORECASE):
+            row_html = tr_match.group(1)
+            cells = re.findall(r'<t[hd][^>]*>(.*?)</t[hd]>', row_html, re.DOTALL | re.IGNORECASE)
+            cell_texts = [re.sub(r'<[^>]+>', ' ', c).strip() for c in cells]
+            cell_texts = [re.sub(r'\s+', ' ', t).strip() for t in cell_texts]
+            if cell_texts:
+                rows.append(cell_texts)
+        if not rows:
+            return None
+        return rows
+
+    def _insert_word_table_from_grid(doc, grid, space_after_pt=4.0):
+        """Create a Word table (Insert table style) and fill each cell with text from grid. Apply font."""
+        if not grid:
+            return
+        num_rows = len(grid)
+        num_cols = max(len(r) for r in grid)
+        if num_cols == 0:
+            return
+        table = doc.add_table(rows=num_rows, cols=num_cols)
+        table.style = 'Table Grid'
+        for r_idx, row_cells in enumerate(grid):
+            for c_idx, cell_text in enumerate(row_cells):
+                if c_idx >= num_cols:
+                    break
+                cell = table.cell(r_idx, c_idx)
+                cell.text = cell_text
+                for para in cell.paragraphs:
+                    _apply_font(para, space_after_pt=0)
+        # Spacer paragraph after table
+        spacer = doc.add_paragraph()
+        spacer.paragraph_format.space_before = Pt(0)
+        spacer.paragraph_format.space_after = Pt(space_after_pt)
+        spacer.paragraph_format.line_spacing = 1.0
+
     def _bboxes_overlap_y(a, b, threshold=0.4):
         overlap = min(a['y2'], b['y2']) - max(a['y1'], b['y1'])
         h_a     = a['y2'] - a['y1']
@@ -1826,20 +1869,22 @@ def process_pdf_to_docx(
 
             if len(row) == 1:
                 bbox      = row[0]
-                raw       = _render_text_to_raw_paragraphs(bbox['text'])
-                indent_cm = max(0.0, (bbox['x1'] / page_width) * (A4_WIDTH_PT / 28.3465) - LEFT_MARGIN_CM)
-
-                # Tính right indent: nếu bbox không trải hết đến lề phải content
-                bbox_x2_cm        = (bbox['x2'] / page_width) * (A4_WIDTH_PT / 28.3465)
-                content_right_cm  = (A4_WIDTH_PT / 28.3465) - 2.0  # lề phải 2cm
-                right_indent_cm   = max(0.0, content_right_cm - bbox_x2_cm)
-                # Chỉ áp dụng nếu bbox thực sự hẹp (tránh áp sai cho paragraph full-width)
-                if right_indent_cm < 0.5:
-                    right_indent_cm = 0.0
-
-                _append_paragraphs_to_body(raw, transcript_doc, indent_cm,
-                                           space_after_pt=space_after_pt,
-                                           right_indent_cm=right_indent_cm)
+                text      = bbox['text'] or ''
+                # If content is HTML table, create Word table and fill cells (like Insert Table + type text)
+                grid = _parse_html_table_to_grid(text)
+                if grid:
+                    _insert_word_table_from_grid(transcript_doc, grid, space_after_pt=space_after_pt)
+                else:
+                    raw       = _render_text_to_raw_paragraphs(text)
+                    indent_cm = max(0.0, (bbox['x1'] / page_width) * (A4_WIDTH_PT / 28.3465) - LEFT_MARGIN_CM)
+                    bbox_x2_cm        = (bbox['x2'] / page_width) * (A4_WIDTH_PT / 28.3465)
+                    content_right_cm  = (A4_WIDTH_PT / 28.3465) - 2.0
+                    right_indent_cm   = max(0.0, content_right_cm - bbox_x2_cm)
+                    if right_indent_cm < 0.5:
+                        right_indent_cm = 0.0
+                    _append_paragraphs_to_body(raw, transcript_doc, indent_cm,
+                                               space_after_pt=space_after_pt,
+                                               right_indent_cm=right_indent_cm)
 
             else:
                 # Song song → invisible table, width cột theo tọa độ tuyệt đối
@@ -1860,15 +1905,30 @@ def process_pdf_to_docx(
                     for p in list(cell.paragraphs):
                         cell._element.remove(p._element)
 
-                    raw       = _render_text_to_raw_paragraphs(bbox['text'])
-                    alignment = determine_alignment_by_position(bbox, page_width, page_height)
-
-                    if raw:
-                        _append_paragraphs_to_cell(raw, cell, alignment)
+                    text_bbox = bbox['text'] or ''
+                    grid     = _parse_html_table_to_grid(text_bbox)
+                    if grid:
+                        num_rows, num_cols = len(grid), max(len(r) for r in grid)
+                        if num_cols > 0:
+                            inner = transcript_doc.add_table(rows=num_rows, cols=num_cols)
+                            inner.style = 'Table Grid'
+                            tbl_el = inner._tbl
+                            transcript_doc._element.body.remove(tbl_el)
+                            cell._element.append(tbl_el)
+                            for r_idx, row_cells in enumerate(grid):
+                                for c_idx, cell_text in enumerate(row_cells):
+                                    if c_idx < num_cols:
+                                        inner.cell(r_idx, c_idx).text = cell_text
+                                        for para in inner.cell(r_idx, c_idx).paragraphs:
+                                            _apply_font(para)
                     else:
-                        cell.add_paragraph()
-
-                    if not cell.paragraphs:
+                        raw       = _render_text_to_raw_paragraphs(text_bbox)
+                        alignment = determine_alignment_by_position(bbox, page_width, page_height)
+                        if raw:
+                            _append_paragraphs_to_cell(raw, cell, alignment)
+                        else:
+                            cell.add_paragraph()
+                    if not list(cell._element):
                         cell.add_paragraph()
 
                 # Paragraph spacer sau table để tạo khoảng cách tương đương gap
