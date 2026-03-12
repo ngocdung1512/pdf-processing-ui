@@ -10,9 +10,9 @@ echo  AnythingLLM (OCR_LLM) - Dev Servers
 echo ==========================================
 echo.
 
-REM Window 1: AnythingLLM server (API) on 4101
+REM Window 1: AnythingLLM server (API) on 4101 (must set SERVER_PORT so frontend .env 4101 matches)
 echo [1/3] Starting AnythingLLM server (API) on port 4101...
-start "AnythingLLM Server - 4101" cmd /k "cd /d ""%PROJECT_ROOT%\OCR_LLM"" && yarn dev:server"
+start "AnythingLLM Server - 4101" cmd /k "cd /d ""%PROJECT_ROOT%\OCR_LLM"" && set SERVER_PORT=4101 && yarn dev:server"
 
 REM Window 2: Collector on 8888
 echo [2/3] Starting document collector on port 8888...

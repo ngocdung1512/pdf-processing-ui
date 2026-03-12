@@ -1,8 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional
 import uuid
 from pathlib import Path
 import shutil
@@ -12,22 +10,12 @@ import re
 import threading
 import time
 from subprocess import Popen, PIPE, STDOUT
-import numpy as np
 
 # Import PyMuPDF for PDF detection
 try:
     import fitz  # PyMuPDF
 except ImportError:
     fitz = None
-
-# Import PaddleOCR for basic OCR (scan PDFs)
-try:
-    from paddleocr import PaddleOCR
-except ImportError:
-    PaddleOCR = None
-
-# Global basic OCR model (lazy-loaded)
-_basic_ocr_model = None
 
 app = FastAPI()
 
@@ -172,6 +160,7 @@ def process_pdf_background(job_id: str, pdf_path: Path, output_docx: Path, pdf_t
             print(f"[ERROR] {error_msg}", flush=True)
             raise RuntimeError(error_msg)
         
+        # Advanced OCR (scan): no --text-only → layout preserved (textboxes)
         cmd = [
             sys.executable,
             "-u",  # Unbuffered output
@@ -180,6 +169,8 @@ def process_pdf_background(job_id: str, pdf_path: Path, output_docx: Path, pdf_t
             "--output",
             str(output_docx),
         ]
+        if pdf_type == "scan":
+            cmd.extend(["--dpi", "200"])  # explicit DPI for scan
         
         print(f"[INFO] Job {job_id}: Starting conversion with command: {' '.join(cmd)}", flush=True)
         print(f"[INFO] Job {job_id}: Python executable: {sys.executable}", flush=True)
@@ -414,15 +405,14 @@ async def convert_pdf(file: UploadFile = File(...)):
 @app.post("/convert_basic")
 async def convert_basic_pdf(file: UploadFile = File(...)):
     """
-    Basic OCR/Text extraction:
-    - Chỉ trích xuất text, không giữ bố cục.
-    - Hỗ trợ cả PDF text và PDF scan.
-      + PDF text: dùng cùng luồng xử lý PDF text như OCR nâng cao (script convert_keep_layout.py), sau đó rút text.
-      + PDF scan: dùng pipeline riêng `ocr_basic.py` (YOLO + VietOCR), KHÔNG dùng convert_pdf_gpu.py và KHÔNG fallback sang OCR nâng cao.
+    Basic OCR/Text extraction: text only, no layout.
+    - PDF text: convert_keep_layout.py then extract text to plain DOCX.
+    - PDF scan: convert_pdf_gpu.py with --text-only (same pipeline as advanced, text-only output).
     """
     temp_id = str(uuid.uuid4())
     pdf_path = UPLOAD_DIR / f"basic_{temp_id}.pdf"
     output_docx = UPLOAD_DIR / f"basic_{temp_id}.docx"
+    basic_download_suffix = "_basic"  # will be _basic_qwen or _basic_vietocr when known
 
     # Save uploaded PDF
     with open(pdf_path, "wb") as f:
@@ -433,32 +423,39 @@ async def convert_basic_pdf(file: UploadFile = File(...)):
 
     # ===== Chọn luồng xử lý theo loại PDF =====
     if pdf_type == "scan":
-        # PDF scan: dùng pipeline riêng ocr_basic.py (YOLO + VietOCR), KHÔNG gọi convert_pdf_gpu.py
-        script_path = BASE_DIR / "ocr_basic.py"
+        # PDF scan: use same pipeline as advanced OCR (convert_pdf_gpu.py) for speed (parallel + batched Qwen),
+        # then extract text and return plain DOCX (text-only). Same speed as advanced, different output format.
+        output_docx = UPLOAD_DIR / f"basic_{temp_id}.docx"
+        basic_download_suffix = "_basic"
+        scripts_dir = BASE_DIR / "scripts"
+        script_path = scripts_dir / "convert_pdf_gpu.py"
         if not script_path.exists():
             return JSONResponse(
                 status_code=500,
                 content={
-                    "error": f"Không tìm thấy script OCR cơ bản cho PDF scan: {script_path}. Vui lòng kiểm tra file ocr_basic.py."
+                    "error": f"Không tìm thấy script xử lý PDF scan: {script_path}. Vui lòng kiểm tra thư mục scripts."
                 },
             )
 
-        temp_layout_docx = UPLOAD_DIR / f"basic_{temp_id}_ocr_basic.docx"
-
+        # Script writes text-only DOCX directly (no layout); no extract step needed
         cmd = [
             sys.executable,
             "-u",
             str(script_path),
             str(pdf_path),
             "--output",
-            str(temp_layout_docx),
+            str(output_docx),
+            "--dpi",
+            "200",
+            "--text-only",
         ]
 
-        print(f"[INFO] Basic OCR (scan) - running command: {' '.join(cmd)}", flush=True)
+        print(f"[INFO] Basic OCR (scan) - text-only pipeline: {' '.join(cmd)}", flush=True)
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
+        env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
         process = Popen(
             cmd,
@@ -473,23 +470,26 @@ async def convert_basic_pdf(file: UploadFile = File(...)):
             cwd=str(BASE_DIR),
         )
 
-        # Log đơn giản, không cập nhật progress cho frontend
         for line in process.stdout:
             print(line, end="", flush=True)
 
         process.wait()
 
-        if process.returncode != 0 or not temp_layout_docx.exists():
-            print(f"[ERROR] Basic OCR (scan) via ocr_basic.py failed, return code: {process.returncode}", flush=True)
+        if process.returncode != 0 or not output_docx.exists():
+            print(f"[ERROR] Basic OCR (scan) failed, return code: {process.returncode}", flush=True)
             return JSONResponse(
                 status_code=500,
                 content={
-                    "error": "OCR cơ bản cho PDF scan thất bại (ocr_basic.py). Vui lòng thử lại hoặc dùng chế độ OCR nâng cao."
+                    "error": "OCR cơ bản cho PDF scan thất bại. Vui lòng thử lại hoặc dùng chế độ OCR nâng cao."
                 },
             )
 
-        # Lấy text thuần từ DOCX bố cục do ocr_basic.py tạo ra
-        text = extract_text_from_docx(temp_layout_docx)
+        filename_stem = Path(file.filename).stem if file.filename else "result"
+        return FileResponse(
+            output_docx,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=f"{filename_stem}{basic_download_suffix}.docx",
+        )
     else:
         # PDF text: dùng cùng script như OCR nâng cao (convert_keep_layout.py), sau đó rút text thuần
         scripts_dir = BASE_DIR / "scripts"
@@ -571,7 +571,7 @@ async def convert_basic_pdf(file: UploadFile = File(...)):
     return FileResponse(
         output_docx,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=f"{filename_stem}_basic.docx",
+        filename=f"{filename_stem}{basic_download_suffix}.docx",
     )
 
 
@@ -632,25 +632,6 @@ def cancel_job(job_id: str):
     return {"status": "cancelled"}
 
 
-def extract_text_from_pdf(pdf_path: Path) -> str:
-    """Extract text from PDF file"""
-    try:
-        if fitz:
-            doc = fitz.open(pdf_path)
-            text_parts = []
-            for page_num in range(doc.page_count):
-                page = doc[page_num]
-                text = page.get_text()
-                text_parts.append(text)
-            doc.close()
-            return "\n\n".join(text_parts)
-        else:
-            return ""
-    except Exception as e:
-        print(f"[ERROR] Failed to extract text from PDF: {e}", flush=True)
-        return ""
-
-
 def create_plain_docx_from_text(text: str, output_path: Path) -> None:
     """Create a simple DOCX containing only plain text paragraphs."""
     try:
@@ -667,134 +648,67 @@ def create_plain_docx_from_text(text: str, output_path: Path) -> None:
 
 
 def extract_text_from_docx(docx_path: Path) -> str:
-    """Extract text from DOCX file"""
+    """Extract text from DOCX file, including text inside DrawingML textboxes (used by advanced OCR layout)."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    NS_WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+
+    def text_of_paragraph(p_elem: ET.Element) -> str:
+        bits = []
+        for elem in p_elem.iter():
+            if elem.tag == f"{{{NS_W}}}t" and elem.text:
+                bits.append(elem.text)
+        return "".join(bits).strip()
+
     try:
-        from docx import Document
-        doc = Document(docx_path)
-        text_parts = []
-        for paragraph in doc.paragraphs:
-            if paragraph.text.strip():
-                text_parts.append(paragraph.text)
-        return "\n\n".join(text_parts)
+        with zipfile.ZipFile(docx_path, "r") as z:
+            with z.open("word/document.xml") as f:
+                tree = ET.parse(f)
+        root = tree.getroot()
+        body = root.find(f".//{{{NS_W}}}body")
+        if body is None:
+            return ""
+
+        paragraphs = []
+        for child in body:
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == "p":
+                has_drawing = any(
+                    (c.tag.split("}")[-1] if "}" in c.tag else c.tag) == "drawing"
+                    for c in child.iter()
+                )
+                if has_drawing:
+                    for run in child:
+                        if (run.tag.split("}")[-1] if "}" in run.tag else run.tag) != "r":
+                            continue
+                        for d in run.iter():
+                            if (d.tag.split("}")[-1] if "}" in d.tag else d.tag) != "drawing":
+                                continue
+                            for txbx in d.iter(f"{{{NS_WPS}}}txbx"):
+                                for content in list(txbx):
+                                    if (content.tag.split("}")[-1] if "}" in content.tag else content.tag) != "txbxContent":
+                                        continue
+                                    for p in content.findall(f"{{{NS_W}}}p"):
+                                        t = text_of_paragraph(p)
+                                        if t:
+                                            paragraphs.append(t)
+                            break
+                else:
+                    t = text_of_paragraph(child)
+                    if t:
+                        paragraphs.append(t)
+            elif tag == "tbl":
+                for tr in child.findall(f"{{{NS_W}}}tr"):
+                    for tc in tr.findall(f"{{{NS_W}}}tc"):
+                        for p in tc.findall(f"{{{NS_W}}}p"):
+                            t = text_of_paragraph(p)
+                            if t:
+                                paragraphs.append(t)
+        return "\n\n".join(paragraphs)
     except Exception as e:
         print(f"[ERROR] Failed to extract text from DOCX: {e}", flush=True)
         return ""
-
-
-def get_basic_ocr() -> Optional["PaddleOCR"]:
-    """Lazy-load và trả về instance PaddleOCR dùng cho OCR cơ bản (scan)."""
-    global _basic_ocr_model
-
-    if _basic_ocr_model is not None:
-        return _basic_ocr_model
-
-    if PaddleOCR is None:
-        print("[WARN] PaddleOCR chưa được cài đặt. Vui lòng `pip install paddleocr` nếu muốn dùng OCR cơ bản cho PDF scan.", flush=True)
-        return None
-
-    try:
-        # Một số phiên bản PaddleOCR không hỗ trợ tham số use_gpu, nên chỉ dùng tham số chung.
-        print(f"[INFO] Khởi tạo PaddleOCR cho OCR cơ bản (lang='vi')", flush=True)
-        _basic_ocr_model = PaddleOCR(
-            lang="vi",
-            use_angle_cls=True,
-        )
-        return _basic_ocr_model
-    except Exception as e:
-        print(f"[ERROR] Không khởi tạo được PaddleOCR cho OCR cơ bản: {e}", flush=True)
-        _basic_ocr_model = None
-        return None
-
-
-def ocr_basic_scan_pdf_to_text(pdf_path: Path, temp_prefix: str = "basic_scan") -> str:
-    """
-    OCR PDF scan bằng PaddleOCR, chỉ lấy text, không giữ bố cục.
-
-    - Render từng trang PDF sang ảnh (dpi vừa phải để cân bằng tốc độ/chất lượng).
-    - Chạy PaddleOCR trên từng ảnh.
-    - Ghép tất cả dòng text lại thành 1 chuỗi.
-
-    Lưu ý: Nếu không có fitz hoặc PaddleOCR → trả về chuỗi rỗng.
-    """
-    if fitz is None:
-        print("[WARN] PyMuPDF (fitz) chưa được cài đặt, không thể render PDF sang ảnh cho OCR cơ bản.", flush=True)
-        return ""
-
-    ocr = get_basic_ocr()
-    if ocr is None:
-        print("[WARN] PaddleOCR không sẵn sàng, không thể OCR PDF scan ở chế độ cơ bản.", flush=True)
-        return ""
-
-    texts: List[str] = []
-
-    try:
-        doc = fitz.open(pdf_path)
-    except Exception as e:
-        print(f"[ERROR] Không mở được PDF cho OCR cơ bản: {e}", flush=True)
-        return ""
-
-    try:
-        total_pages = doc.page_count
-        print(f"[INFO] Basic OCR (scan) - tổng số trang: {total_pages}", flush=True)
-
-        for page_index in range(total_pages):
-            page = doc[page_index]
-            # Dùng dpi vừa phải để tránh quá chậm (150–180 là mức hợp lý)
-            try:
-                pix = page.get_pixmap(dpi=160)
-            except TypeError:
-                # Fallback nếu phiên bản fitz không hỗ trợ tham số dpi
-                pix = page.get_pixmap()
-
-            image_filename = f"{temp_prefix}_{uuid.uuid4().hex}_page{page_index+1}.png"
-            image_path = UPLOAD_DIR / image_filename
-
-            try:
-                pix.save(str(image_path))
-            except Exception as e:
-                print(f"[WARN] Không lưu được ảnh trang {page_index+1} cho OCR cơ bản: {e}", flush=True)
-                continue
-
-            try:
-                # PaddleOCR trả về list các dòng; mỗi dòng là list các bbox + info
-                result = ocr.ocr(str(image_path), cls=True)
-                if not result:
-                    continue
-
-                for line in result:
-                    for item in line:
-                        if len(item) < 2:
-                            continue
-                        info = item[1]
-                        # info có thể là tuple/list (text, score) hoặc string tuỳ phiên bản
-                        if isinstance(info, (list, tuple)) and len(info) >= 1:
-                            txt = str(info[0])
-                        else:
-                            txt = str(info)
-
-                        txt = txt.strip()
-                        if txt:
-                            texts.append(txt)
-            except Exception as e:
-                print(f"[WARN] Lỗi OCR trang {page_index+1} ở chế độ cơ bản: {e}", flush=True)
-            finally:
-                # Xoá file ảnh tạm để tránh đầy ổ đĩa
-                try:
-                    if image_path.exists():
-                        image_path.unlink()
-                except Exception as e:
-                    print(f"[WARN] Không xoá được ảnh tạm {image_path}: {e}", flush=True)
-
-        doc.close()
-    except Exception as e:
-        print(f"[ERROR] Lỗi khi OCR basic PDF scan: {e}", flush=True)
-        try:
-            doc.close()
-        except Exception:
-            pass
-
-    combined_text = "\n".join(texts)
-    print(f"[INFO] Basic OCR (scan) - tổng số dòng text trích xuất: {len(texts)}", flush=True)
-    return combined_text
 
 

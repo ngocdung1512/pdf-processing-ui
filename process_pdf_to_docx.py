@@ -567,22 +567,31 @@ def process_pdf_to_docx(
     max_pages: int = None
 ):
     """Complete pipeline: PDF → Single DOCX"""
+
+    # Resolve script directory so model paths work regardless of cwd (e.g. when run from api/scripts)
     _root = Path(__file__).resolve().parent
-    # Resolve paths relative to this script (project root) so it works from any cwd
     if model_path is None:
         model_path = str(_root / "doclayout_yolo_docstructbench_imgsz1024.pt")
+    else:
+        model_path = str(Path(model_path).resolve())
     if ocr_model_path is None:
         ocr_model_path = str(_root / "Qwen2.5-VL-3B")
+    else:
+        # Resolve if it looks like a local path (directory exists)
+        p = Path(ocr_model_path)
+        if p.exists():
+            ocr_model_path = str(p.resolve())
+        # else: keep as-is for HuggingFace model IDs (e.g. "Qwen/Qwen2.5-VL-3B")
 
-    pdf_path = Path(pdf_path)
+    pdf_path = Path(pdf_path).resolve()
     if not pdf_path.exists():
         print(f"Error: PDF file not found: {pdf_path}")
         return None
-    
+
     if output_docx is None:
         output_docx = pdf_path.parent / f"{pdf_path.stem}_reconstructed.docx"
     else:
-        output_docx = Path(output_docx)
+        output_docx = Path(output_docx).resolve()
     
     print("=" * 80)
     print("COMPLETE PDF PROCESSING PIPELINE")
@@ -650,8 +659,6 @@ def process_pdf_to_docx(
         print(f"  ⚠️  Failed to convert PDF to images: {e}")
         return None
     total_pages = len(images)
-    # For API progress parsing (backend expects "--- PDF Info: N pages ---")
-    print(f"--- PDF Info: {total_pages} pages ---", flush=True)
     if max_pages is not None and max_pages > 0:
         images = images[:max_pages]
         print(f"  ✓ Converted {total_pages} pages, processing first {len(images)} pages")
@@ -677,9 +684,6 @@ def process_pdf_to_docx(
     
     for page_idx, image in enumerate(images):
         print(f"\n  Processing page {page_idx + 1}/{len(images)}...")
-        # For API progress bar (backend parses "Recognizing Text: X% | current/total")
-        pct = int((page_idx + 1) / len(images) * 100) if images else 0
-        print(f"Recognizing Text: {pct}% | {page_idx + 1}/{len(images)}", flush=True)
         
         # ========================================================================
         # BƯỚC 1: YOLO DETECT BBOXES (không có thứ tự)
@@ -779,7 +783,9 @@ def process_pdf_to_docx(
             if enable_ocr and qwen_model is not None and processor is not None:
                 pil_image = Image.fromarray(cv2.cvtColor(bbox_image, cv2.COLOR_BGR2RGB))
                 prompt_text = (
-                    "Trích xuất văn bản trong hình ảnh sang định dạng HTML.\n"
+                    "Trích xuất NGUYÊN VĂN (không được bịa thêm) trong hình ảnh sang định dạng HTML.\n"
+                    "YÊU CẦU CỐT LÕI:\n"
+                    "- KHÔNG ĐƯỢC tự suy diễn thành danh sách (bullet/numbered list) nếu trên ảnh không THẤY RÕ từng gạch đầu dòng/dấu chấm số.\n"
                     "YÊU CẦU ĐỊNH DẠNG:\n"
                     "- Giữ nguyên định dạng gốc của văn bản. Nếu chữ trong ảnh là in đậm, in nghiêng, hoặc gạch chân, hãy dùng thẻ <b>, <i>, <u> tương ứng.\n"
                     "- Nếu là đoạn văn bình thường, dùng thẻ <p>.\n"
@@ -814,7 +820,7 @@ def process_pdf_to_docx(
             
         # Run batched OCR in chunks to prevent VRAM spikes
         if enable_ocr and qwen_model is not None and processor is not None and messages_batch:
-            BATCH_SIZE = 8
+            BATCH_SIZE = 16
             print(f"      Running batched OCR for {len(messages_batch)} bboxes (Batch size: {BATCH_SIZE})...")
             
             all_texts = []
@@ -1155,7 +1161,7 @@ def process_pdf_to_docx(
     
     textbox_id_counter = 100  # unique id for each textbox shape
     
-    def create_textbox_element(textbox_id, x_emu, y_emu, w_emu, h_emu, content_paragraphs_xml):
+    def create_textbox_element(textbox_id, x_emu, y_emu, w_emu, h_emu, content_paragraphs_xml, wrap_type="none"):
         """
         Tạo DrawingML textbox element (wp:anchor) để neo tại vị trí tuyệt đối trên trang.
         
@@ -1166,6 +1172,7 @@ def process_pdf_to_docx(
             w_emu: width in EMU
             h_emu: height in EMU (min height, auto-extend if needed)
             content_paragraphs_xml: raw XML string of <w:p> elements to put inside
+            wrap_type: 'none' (floating) or 'square' (text wrapping)
         
         Returns:
             OxmlElement for w:drawing
@@ -1182,6 +1189,13 @@ def process_pdf_to_docx(
             'wp14': 'http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing',
             'v': 'urn:schemas-microsoft-com:vml',
         }
+        
+        if wrap_type == 'square':
+            wrap_xml = '<wp:wrapSquare wrapText="bothSides"/>'
+        elif wrap_type == 'topAndBottom':
+            wrap_xml = '<wp:wrapTopAndBottom/>'
+        else:
+            wrap_xml = '<wp:wrapNone/>'
         
         # Build the anchor XML
         drawing_xml = f'''<w:drawing xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -1203,7 +1217,7 @@ def process_pdf_to_docx(
             </wp:positionV>
             <wp:extent cx="{w_emu}" cy="{h_emu}"/>
             <wp:effectExtent l="0" t="0" r="0" b="0"/>
-            <wp:wrapNone/>
+            {wrap_xml}
             <wp:docPr id="{textbox_id}" name="TextBox {textbox_id}"/>
             <a:graphic>
               <a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
@@ -1264,6 +1278,14 @@ def process_pdf_to_docx(
         section = doc.sections[-1]
         section.page_width = Pt(A4_WIDTH_PT)
         section.page_height = Pt(A4_HEIGHT_PT)
+        
+        # Tạo 1 paragraph ẩn để neo tất cả textboxes của trang này, tránh tạo dòng trống
+        page_anchor_para = doc.add_paragraph()
+        page_anchor_para.paragraph_format.space_before = Pt(0)
+        page_anchor_para.paragraph_format.space_after = Pt(0)
+        page_anchor_para.paragraph_format.line_spacing = 1.0
+        page_anchor_run = page_anchor_para.add_run()
+        page_anchor_run.font.size = Pt(1)
         
         for bbox in sorted_bboxes:
             text = bbox['text'].strip()
@@ -1380,36 +1402,513 @@ def process_pdf_to_docx(
                 textbox_id_counter, x_emu, y_emu, w_emu, h_emu, content_xml
             )
             
-            # Thêm 1 paragraph trống vào document chính, rồi gắn drawing element vào đó
-            anchor_para = doc.add_paragraph()
+            # Gắn vào paragraph neo
+            page_anchor_run._element.append(drawing_elem)
+        
+    # --- STEP 8 (REVISED): Render bboxes sang văn bản thường dùng indent + invisible table ---
+    print("\n[Step 8] Creating clean transcript (indent + table approach)...")
+
+    transcript_doc = Document()
+    for section in transcript_doc.sections:
+        section.top_margin = Cm(1.5)
+        section.bottom_margin = Cm(1.5)
+        section.left_margin = Cm(3.0)
+        section.right_margin = Cm(2.0)
+
+    A4_WIDTH_PT = 595.0
+    A4_HEIGHT_PT = 842.0
+    CONTENT_WIDTH_CM = 15.0  # A4 trừ lề trái 3cm + lề phải 2cm
+    LEFT_MARGIN_CM = 3.0
+
+    def bbox_to_x1_cm(bbox, page_width):
+        """Tọa độ x1 của bbox quy ra cm tuyệt đối trên A4 (tính từ lề trái trang)"""
+        return (bbox['x1'] / page_width) * (A4_WIDTH_PT / 28.3465)
+
+    def bbox_to_width_cm(bbox, page_width):
+        return ((bbox['x2'] - bbox['x1']) / page_width) * (A4_WIDTH_PT / 28.3465)
+
+    def get_indent_cm(bbox, page_width):
+        """Indent tính từ lề content (3cm), không âm"""
+        return max(0.0, bbox_to_x1_cm(bbox, page_width) - LEFT_MARGIN_CM)
+
+    def bboxes_overlap_y(a, b, threshold=0.4):
+        """Kiểm tra 2 bbox có overlap Y >= threshold * min_height không"""
+        overlap = min(a['y2'], b['y2']) - max(a['y1'], b['y1'])
+        min_h = min(a['y2'] - a['y1'], b['y2'] - b['y1'])
+        return min_h > 0 and (overlap / min_h) >= threshold
+
+    def bboxes_overlap_x(a, b):
+        """Kiểm tra 2 bbox có overlap X không (nếu có → không thể song song)"""
+        return min(a['x2'], b['x2']) - max(a['x1'], b['x1']) > 10
+
+    def set_table_borders(table):
+        """Helper to clear table borders in python-docx"""
+        tbl = table._tbl
+        tblPr = tbl.tblPr
+        if tblPr is None:
+            tblPr = OxmlElement('w:tblPr')
+            tbl.insert(0, tblPr)
+        
+        tblBorders = tblPr.find(qn('w:tblBorders'))
+        if tblBorders is None:
+            tblBorders = OxmlElement('w:tblBorders')
+            tblPr.append(tblBorders)
+        
+        for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+            border = tblBorders.find(qn('w:' + border_name))
+            if border is None:
+                border = OxmlElement('w:' + border_name)
+                tblBorders.append(border)
+            border.set(qn('w:val'), 'none')
+            border.set(qn('w:sz'), '0')
+            border.set(qn('w:space'), '0')
+            border.set(qn('w:color'), 'auto')
+
+    def group_into_rows(sorted_bboxes):
+        """
+        Nhóm sorted_bboxes thành rows. Mỗi row là list of bbox.
+        Row có >1 bbox = song song (multi-column).
+        Dùng overlap Y với TẤT CẢ bbox trong row hiện tại để quyết định.
+        """
+        rows = []
+        current_row = []
+        
+        for bbox in sorted_bboxes:
+            if not bbox['text'].strip():
+                continue
+            if not current_row:
+                current_row.append(bbox)
+            else:
+                # Bbox mới có overlap Y với ít nhất 1 bbox trong row hiện tại?
+                has_y_overlap = any(bboxes_overlap_y(bbox, b) for b in current_row)
+                # Bbox mới có overlap X với bất kỳ bbox nào trong row không?
+                has_x_overlap = any(bboxes_overlap_x(bbox, b) for b in current_row)
+                
+                if has_y_overlap and not has_x_overlap:
+                    # Song song thật sự → thêm vào row
+                    current_row.append(bbox)
+                else:
+                    rows.append(current_row)
+                    current_row = [bbox]
+        
+        if current_row:
+            rows.append(current_row)
+        return rows
+
+    def render_bbox_to_paragraphs(bbox, page_width, target_doc, indent_override=None):
+        """Render 1 bbox thành list paragraph, gắn indent từ tọa độ x1"""
+        text = bbox['text'].strip()
+        if not text:
+            return
+        
+        # Convert text → HTML → paragraphs (giữ nguyên logic hiện tại)
+        if '<' in text and '>' in text and any(t in text.lower() for t in ['<p>', '<b>', '<i>', '<u>', '<ul>', '<ol>', '<li>', '<br', '<h']):
+            html_content = text
+        else:
+            html_content = markdown.markdown(text)
+        
+        html_content = re.sub(r'<img(?![^>]*src\s*=)[^>]*/?\s*>', '', html_content, flags=re.IGNORECASE)
+        html_content = re.sub(r'<(?!/?(?:p|b|i|u|s|a|br|hr|h[1-6]|ul|ol|li|table|tr|td|th|thead|tbody|div|span|strong|em|sub|sup|pre|code|blockquote)\b)[A-Z][^>]*>', '', html_content, flags=re.IGNORECASE)
+        
+        temp_doc = Document()
+        try:
+            if html_parser is not None:
+                html_parser.add_html_to_document(html_content, temp_doc)
+            else:
+                temp_doc.add_paragraph().add_run(text)
+        except Exception:
+            temp_doc = Document()
+            plain = re.sub(r'<[^>]+>', ' ', text).strip()
+            temp_doc.add_paragraph().add_run(re.sub(r'\s+', ' ', plain))
+        
+        temp_paras = [p for p in temp_doc.paragraphs if p.text.strip()]
+        if not temp_paras:
+            return
+        
+        indent_cm = indent_override if indent_override is not None else get_indent_cm(bbox, page_width)
+        
+        for tp in temp_paras:
+            import copy
+            from docx.text.paragraph import Paragraph
+            new_p = copy.deepcopy(tp._p)
+            body = target_doc._element.body
+            if body.sectPr is not None:
+                body.sectPr.addprevious(new_p)
+            else:
+                body.append(new_p)
+            cloned = Paragraph(new_p, target_doc)
+            
+            # Apply font
+            for run in cloned.runs:
+                saved = (run.font.bold, run.font.italic, run.font.underline)
+                run.font.name = 'Times New Roman'
+                run.font.size = Pt(10)
+                if run._element.rPr is not None:
+                    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Times New Roman')
+                run.font.bold, run.font.italic, run.font.underline = saved
+            
+            # Apply indent từ tọa độ x1 thật
+            if indent_cm > 0.3:
+                pPr = new_p.get_or_add_pPr()
+                ind = pPr.find(qn('w:ind'))
+                twips = int(indent_cm * 567)
+                if ind is None:
+                    ind = OxmlElement('w:ind')
+                    ind.set(qn('w:left'), str(twips))
+                    pPr.append(ind)
+                else:
+                    ind.set(qn('w:left'), str(twips))
+
+    # --- STEP 8: Create clean transcript ---
+    print("\n[Step 8] Creating clean transcript (indent + table approach)...")
+
+    transcript_doc = Document()
+    for section in transcript_doc.sections:
+        section.top_margin    = Cm(1.5)
+        section.bottom_margin = Cm(1.5)
+        section.left_margin   = Cm(3.0)
+        section.right_margin  = Cm(2.0)
+
+    A4_WIDTH_PT      = 595.0
+    A4_HEIGHT_PT     = 842.0
+    CONTENT_WIDTH_CM = 15.0
+    LEFT_MARGIN_CM   = 3.0
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    def _set_table_borders_none(table):
+        tbl   = table._tbl
+        tblPr = tbl.tblPr
+        if tblPr is None:
+            tblPr = OxmlElement('w:tblPr')
+            tbl.insert(0, tblPr)
+        tblBorders = tblPr.find(qn('w:tblBorders'))
+        if tblBorders is None:
+            tblBorders = OxmlElement('w:tblBorders')
+            tblPr.append(tblBorders)
+        for edge in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+            el = tblBorders.find(qn(f'w:{edge}'))
+            if el is None:
+                el = OxmlElement(f'w:{edge}')
+                tblBorders.append(el)
+            el.set(qn('w:val'),   'none')
+            el.set(qn('w:sz'),    '0')
+            el.set(qn('w:space'), '0')
+            el.set(qn('w:color'), 'auto')
+        # Zero cell margins để tránh trang trắng thừa
+        tblCellMar = tblPr.find(qn('w:tblCellMar'))
+        if tblCellMar is None:
+            tblCellMar = OxmlElement('w:tblCellMar')
+            tblPr.append(tblCellMar)
+        for side in ['top', 'left', 'bottom', 'right']:
+            mar = tblCellMar.find(qn(f'w:{side}'))
+            if mar is None:
+                mar = OxmlElement(f'w:{side}')
+                tblCellMar.append(mar)
+            mar.set(qn('w:w'),    '0')
+            mar.set(qn('w:type'), 'dxa')
+
+    def _apply_font(para, space_after_pt=4.0, space_before_pt=0.0):
+        """Áp font Times New Roman 10pt, giữ nguyên bold/italic/underline."""
+        para.paragraph_format.space_after  = Pt(space_after_pt)
+        para.paragraph_format.space_before = Pt(space_before_pt)
+        para.paragraph_format.line_spacing = 1.0
+        for run in para.runs:
+            b, i, u = run.font.bold, run.font.italic, run.font.underline
+            run.font.name = 'Times New Roman'
+            run.font.size = Pt(10)
+            if run._element.rPr is not None:
+                run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Times New Roman')
+            else:
+                rPr    = OxmlElement('w:rPr')
+                run._element.insert(0, rPr)
+                rFonts = OxmlElement('w:rFonts')
+                rFonts.set(qn('w:eastAsia'), 'Times New Roman')
+                rPr.append(rFonts)
+            if b is not None: run.font.bold      = b
+            if i is not None: run.font.italic    = i
+            if u is not None: run.font.underline = u
+
+    def _render_text_to_raw_paragraphs(text):
+        """Chuyển text thành list paragraphs - KHÔNG convert markdown để giữ nguyên OCR output."""
+        # Chỉ dùng html_parser nếu text thực sự là HTML có tags
+        if '<' in text and '>' in text and any(
+            t in text.lower() for t in ['<p>', '<b>', '<i>', '<u>', '<ul>', '<ol>', '<li>', '<br', '<h']
+        ):
+            html_content = text
+            html_content = re.sub(r'<img(?![^>]*src\s*=)[^>]*/?\s*>', '', html_content, flags=re.IGNORECASE)
+            html_content = re.sub(
+                r'<(?!/?(?:p|b|i|u|s|a|br|hr|h[1-6]|ul|ol|li|table|tr|td|th|thead|tbody|div|span|strong|em|sub|sup|pre|code|blockquote)\b)[A-Z][^>]*>',
+                '', html_content, flags=re.IGNORECASE
+            )
+            tmp = Document()
+            try:
+                if html_parser is not None:
+                    html_parser.add_html_to_document(html_content, tmp)
+                else:
+                    tmp.add_paragraph().add_run(text)
+            except Exception:
+                tmp = Document()
+                tmp.add_paragraph().add_run(
+                    re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', text)).strip()
+                )
+        else:
+            # Plain text: tách theo dòng, mỗi dòng là 1 paragraph
+            tmp = Document()
+            lines = text.splitlines()
+            for line in lines:
+                line = line.strip()
+                if line:
+                    tmp.add_paragraph().add_run(line)
+            if not any(p.text.strip() for p in tmp.paragraphs):
+                tmp.add_paragraph().add_run(text.strip())
+
+        return [p for p in tmp.paragraphs if p.text.strip()]
+
+    def _append_paragraphs_to_body(raw_paras, target_doc, indent_cm=0.0, space_after_pt=4.0, right_indent_cm=0.0):
+        import copy
+        from docx.text.paragraph import Paragraph
+        for idx, tp in enumerate(raw_paras):
+            new_p  = copy.deepcopy(tp._p)
+            body   = target_doc._element.body
+            if body.sectPr is not None:
+                body.sectPr.addprevious(new_p)
+            else:
+                body.append(new_p)
+            cloned = Paragraph(new_p, target_doc)
+            is_last = (idx == len(raw_paras) - 1)
+            _apply_font(cloned, space_after_pt=space_after_pt if is_last else 1.0)
+
+            if indent_cm > 0.1 or right_indent_cm > 0.1:
+                pPr   = new_p.get_or_add_pPr()
+                ind   = pPr.find(qn('w:ind'))
+                if ind is None:
+                    ind = OxmlElement('w:ind')
+                    pPr.append(ind)
+                if indent_cm > 0.1:
+                    existing = int(ind.get(qn('w:left'), '0') or '0')
+                    ind.set(qn('w:left'), str(existing + int(indent_cm * 567)))
+                if right_indent_cm > 0.1:
+                    ind.set(qn('w:right'), str(int(right_indent_cm * 567)))
+
+    def _append_paragraphs_to_cell(raw_paras, cell, alignment):
+        """Copy raw paragraphs vào cell của table."""
+        import copy
+        from docx.text.paragraph import Paragraph
+        for tp in raw_paras:
+            new_p  = copy.deepcopy(tp._p)
+            cell._element.append(new_p)
+            cloned = Paragraph(new_p, cell)
+            cloned.alignment = alignment
+            _apply_font(cloned)
+
+    def _bboxes_overlap_y(a, b, threshold=0.4):
+        overlap = min(a['y2'], b['y2']) - max(a['y1'], b['y1'])
+        h_a     = a['y2'] - a['y1']
+        h_b     = b['y2'] - b['y1']
+        min_h   = min(h_a, h_b)
+        
+        if min_h <= 0:
+            return False
+        
+        # Loại trừ: nếu 1 bbox cao gấp 2.5 lần bbox kia
+        # → bbox cao đó là paragraph nhiều dòng, không phải song song thật
+        height_ratio = max(h_a, h_b) / min_h
+        if height_ratio > 2.5:
+            return False
+    
+        return (overlap / min_h) >= threshold
+
+    def _bboxes_overlap_x(a, b, tol=10):
+        return (min(a['x2'], b['x2']) - max(a['x1'], b['x1'])) > tol
+
+    def _group_into_rows(bboxes):
+        """Nhóm bboxes thành rows dựa trên overlap Y. Row > 1 phần tử = song song."""
+        rows    = []
+        current = []
+        for bbox in bboxes:
+            if not bbox['text'].strip():
+                continue
+            if not current:
+                current.append(bbox)
+            else:
+                has_y = any(_bboxes_overlap_y(bbox, b) for b in current)
+                has_x = any(_bboxes_overlap_x(bbox, b) for b in current)
+                if has_y and not has_x:
+                    current.append(bbox)
+                else:
+                    rows.append(current)
+                    current = [bbox]
+        if current:
+            rows.append(current)
+        return rows
+
+    # ── main loop ─────────────────────────────────────────────────────────────
+
+    for page_num, sorted_bboxes, page_width, page_height, header_elements in all_pages_bboxes:
+
+        # Page break
+        if page_num > 1:
+            pb = transcript_doc.add_paragraph()
+            pb.paragraph_format.space_before = Pt(0)
+            pb.paragraph_format.space_after  = Pt(0)
+            pb.paragraph_format.line_spacing = 1.0
+            pb.add_run().add_break(WD_BREAK.PAGE)
+
+        # Header table
+        if header_elements:
+            add_header_table(transcript_doc, header_elements)
+
+        # Phân loại mep vs main
+        margin_l    = page_width * 0.05
+        margin_r    = page_width * 0.95
+        mep_bboxes  = []
+        main_bboxes = []
+        for bbox in sorted_bboxes:
+            if not bbox['text'].strip():
+                continue
+            if bbox['x1'] < margin_l or bbox['x2'] > margin_r:
+                mep_bboxes.append(bbox)
+            else:
+                main_bboxes.append(bbox)
+
+        # ── Render mep bboxes: floating textbox ──────────────────────────────
+        if mep_bboxes:
+            anchor_para = transcript_doc.add_paragraph()
             anchor_para.paragraph_format.space_before = Pt(0)
-            anchor_para.paragraph_format.space_after = Pt(0)
+            anchor_para.paragraph_format.space_after  = Pt(0)
             anchor_para.paragraph_format.line_spacing = 1.0
             anchor_run = anchor_para.add_run()
-            anchor_run._element.append(drawing_elem)
 
+            for bbox in mep_bboxes:
+                raw_paras = _render_text_to_raw_paragraphs(bbox['text'])
+                if not raw_paras:
+                    continue
+                for tp in raw_paras:
+                    _apply_font(tp)
+                content_xml = paragraphs_to_xml(raw_paras)
+
+                x_pt      = (bbox['x1'] / page_width)             * A4_WIDTH_PT
+                y_pt      = (bbox['y1'] / page_height)            * A4_HEIGHT_PT
+                width_pt  = ((bbox['x2'] - bbox['x1']) / page_width)  * A4_WIDTH_PT
+                height_pt = ((bbox['y2'] - bbox['y1']) / page_height) * A4_HEIGHT_PT
+                width_pt  = min(max(width_pt * 1.15, 30), A4_WIDTH_PT - x_pt)
+                height_pt = max(height_pt, 12)
+
+                textbox_id_counter += 1
+                drawing_elem = create_textbox_element(
+                    textbox_id_counter,
+                    int(x_pt      * EMU_PER_PT),
+                    int(y_pt      * EMU_PER_PT),
+                    int(width_pt  * EMU_PER_PT),
+                    int(height_pt * EMU_PER_PT),
+                    content_xml, wrap_type="none"
+                )
+                anchor_run._element.append(drawing_elem)
+
+        # ── Render main bboxes: indent + invisible table ──────────────────────
+        rows = _group_into_rows(main_bboxes)
+
+        for row_idx, row in enumerate(rows):
+            row.sort(key=lambda b: b['x1'])
+
+            # Tính space_after từ Y-gap tới row tiếp theo
+            if row_idx + 1 < len(rows):
+                next_row       = rows[row_idx + 1]
+                cur_y2         = max(b['y2'] for b in row)
+                next_y1        = min(b['y1'] for b in next_row)
+                gap_px         = max(next_y1 - cur_y2, 0)
+                gap_pt         = (gap_px / page_height) * A4_HEIGHT_PT
+                # Clamp: tối thiểu 2pt, tối đa 40pt
+                space_after_pt = max(2.0, min(gap_pt, 40.0))
+            else:
+                space_after_pt = 4.0
+
+            if len(row) == 1:
+                bbox      = row[0]
+                raw       = _render_text_to_raw_paragraphs(bbox['text'])
+                indent_cm = max(0.0, (bbox['x1'] / page_width) * (A4_WIDTH_PT / 28.3465) - LEFT_MARGIN_CM)
+
+                # Tính right indent: nếu bbox không trải hết đến lề phải content
+                bbox_x2_cm        = (bbox['x2'] / page_width) * (A4_WIDTH_PT / 28.3465)
+                content_right_cm  = (A4_WIDTH_PT / 28.3465) - 2.0  # lề phải 2cm
+                right_indent_cm   = max(0.0, content_right_cm - bbox_x2_cm)
+                # Chỉ áp dụng nếu bbox thực sự hẹp (tránh áp sai cho paragraph full-width)
+                if right_indent_cm < 0.5:
+                    right_indent_cm = 0.0
+
+                _append_paragraphs_to_body(raw, transcript_doc, indent_cm,
+                                           space_after_pt=space_after_pt,
+                                           right_indent_cm=right_indent_cm)
+
+            else:
+                # Song song → invisible table, width cột theo tọa độ tuyệt đối
+                table = transcript_doc.add_table(rows=1, cols=len(row))
+                _set_table_borders_none(table)
+                table.autofit = False
+
+                row_x1   = min(b['x1'] for b in row)
+                row_x2   = max(b['x2'] for b in row)
+                row_span = max(row_x2 - row_x1, 1)
+
+                for i, bbox in enumerate(row):
+                    cell     = table.cell(0, i)
+                    b_span   = bbox['x2'] - bbox['x1']
+                    col_w_cm = (b_span / row_span) * CONTENT_WIDTH_CM
+                    cell.width = Cm(max(col_w_cm, 1.0))
+
+                    for p in list(cell.paragraphs):
+                        cell._element.remove(p._element)
+
+                    raw       = _render_text_to_raw_paragraphs(bbox['text'])
+                    alignment = determine_alignment_by_position(bbox, page_width, page_height)
+
+                    if raw:
+                        _append_paragraphs_to_cell(raw, cell, alignment)
+                    else:
+                        cell.add_paragraph()
+
+                    if not cell.paragraphs:
+                        cell.add_paragraph()
+
+                # Paragraph spacer sau table để tạo khoảng cách tương đương gap
+                spacer = transcript_doc.add_paragraph()
+                spacer.paragraph_format.space_before = Pt(0)
+                spacer.paragraph_format.space_after  = Pt(0)
+                spacer.paragraph_format.line_spacing = 1.0
+                spacer_run = spacer.add_run()
+                spacer_run.font.size = Pt(max(1.0, min(space_after_pt * 0.5, 12.0)))
     
-    # Step 7: Save document
-    print(f"\n[Step 7] Saving Word document...")
-    try:
-        output_path = Path(output_docx)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        doc.save(str(output_docx))
-        print(f"  ✓ Saved to: {output_docx}")
-    except PermissionError:
-        # File is locked (probably open in Word), try with timestamp
-        import datetime
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        new_output = output_docx.parent / f"{output_docx.stem}_{timestamp}.docx"
-        print(f"  ⚠️  Original file is locked, saving as: {new_output.name}")
-        doc.save(str(new_output))
-        print(f"  ✓ Saved to: {new_output}")
-        output_docx = new_output
+    # Step 9: Save documents
+    print(f"\n[Step 9] Saving Word documents...")
+
+    def save_doc_safe(d, path):
+        try:
+            d.save(str(path))
+            print(f"  ✓ Saved to: {path}")
+            return path
+        except PermissionError:
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            new_output = path.parent / f"{path.stem}_{timestamp}.docx"
+            print(f"  ⚠️  Original file is locked, saving as: {new_output.name}")
+            d.save(str(new_output))
+            print(f"  ✓ Saved to: {new_output}")
+            return new_output
+
+    # Create layout output path using the original path
+    # layout_path = output_docx.parent / f"{output_docx.stem}_layout{output_docx.suffix}"
+    
+    # # Save both versions
+    # layout_docx = save_doc_safe(doc, layout_path)
+    transcript_docx = save_doc_safe(transcript_doc, output_docx)
+    output_docx = transcript_docx
     
     print("\n" + "=" * 80)
     print("PROCESSING COMPLETE")
     print("=" * 80)
-    print(f"Output file: {output_docx}")
+    print(f"Main output file (transcript): {output_docx}")
+    # print(f"Layout output file: {layout_docx}")
     print(f"Total pages: {len(images)}")
     # all_pages_bboxes giờ là (page_num, sorted_bboxes, page_width, page_height, header_elements)
     total_bboxes = sum(len(bboxes) for _, bboxes, _, _, _ in all_pages_bboxes)
@@ -1419,22 +1918,47 @@ def process_pdf_to_docx(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Complete PDF to DOCX pipeline')
-    parser.add_argument('pdf_path', type=str, help='Path to PDF file')
-    parser.add_argument('--output', type=str, default=None, help='Output DOCX file path')
-    parser.add_argument('--model', type=str, default='doclayout_yolo_docstructbench_imgsz1024.pt',
-                        help='Path to YOLO model file')
-    parser.add_argument('--ocr-model', type=str, default=r'D:\DUNG\Qwen2.5-VL-3B',
-                        help='HuggingFace ID or local directory path for the Qwen2.5-VL model')
-    parser.add_argument('--use-4bit', action='store_true', help='Enable 4-bit quantization (off by default for max quality)')
-    parser.add_argument('--load-8bit', action='store_true', help='Use 8-bit quantization instead of 4-bit')
-    parser.add_argument('--imgsz', type=int, default=1024, help='Image size for inference')
-    parser.add_argument('--conf', type=float, default=0.1, help='Confidence threshold')
-    parser.add_argument('--no-ocr', action='store_true', help='Disable OCR (only detection)')
-    parser.add_argument('--max-pages', type=int, default=None, help='Maximum number of pages to process (for testing)')
-    
+    parser = argparse.ArgumentParser(description="Complete PDF to DOCX pipeline")
+    parser.add_argument("pdf_path", type=str, help="Path to PDF file")
+    parser.add_argument("--output", type=str, default=None, help="Output DOCX file path")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Path to YOLO model file (default: ./doclayout_yolo_docstructbench_imgsz1024.pt)",
+    )
+    parser.add_argument(
+        "--ocr-model",
+        type=str,
+        default=None,
+        help="HuggingFace ID or local directory path for the Qwen2.5-VL model (default: ./Qwen2.5-VL-3B)",
+    )
+    parser.add_argument(
+        "--use-4bit",
+        action="store_true",
+        help="Enable 4-bit quantization (off by default for max quality)",
+    )
+    parser.add_argument(
+        "--load-8bit",
+        action="store_true",
+        help="Use 8-bit quantization instead of 4-bit",
+    )
+    parser.add_argument("--imgsz", type=int, default=1024, help="Image size for inference")
+    parser.add_argument("--conf", type=float, default=0.1, help="Confidence threshold")
+    parser.add_argument(
+        "--no-ocr",
+        action="store_true",
+        help="Disable OCR (only detection)",
+    )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help="Maximum number of pages to process (for testing)",
+    )
+
     args = parser.parse_args()
-    
+
     process_pdf_to_docx(
         pdf_path=args.pdf_path,
         output_docx=args.output,
@@ -1445,5 +1969,5 @@ if __name__ == "__main__":
         enable_ocr=not args.no_ocr,
         load_4bit=args.use_4bit,
         load_8bit=args.load_8bit,
-        max_pages=args.max_pages
+        max_pages=args.max_pages,
     )

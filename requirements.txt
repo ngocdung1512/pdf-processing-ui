@@ -1,6 +1,16 @@
 # PDF processing UI - Python dependencies
-# Install: pip install -r requirements.txt (inside conversion_env)
-
+# Install (inside conversion_env):
+#
+# 1) GPU NVIDIA (install PyTorch with CUDA first, then the rest):
+#    pip uninstall torch torchvision torchaudio -y
+#    RTX 50 series (5060/5070, sm_120): use nightly build:
+#      pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+#    Other NVIDIA (e.g. RTX 30/40): stable CUDA 12.4:
+#      pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+#    pip install -r requirements.txt
+#
+# 2) CPU only: pip install -r requirements.txt
+#
 torch
 torchvision
 torchaudio

@@ -1,9 +1,13 @@
 """
 Complete PDF processing pipeline: PDF → Single DOCX file
-Combines all steps: Detection → VietOCR Batch Prediction → Top-to-Bottom Export
+Supports two OCR engines: Qwen2.5-VL (default) or VietOCR.
+Pipeline: Detection (YOLO) → OCR (Qwen2.5-VL or VietOCR) → Top-to-Bottom Export
 """
 import sys
 import argparse
+import math
+import gc
+import threading
 from pathlib import Path
 from docx import Document
 from docx.shared import Pt, Cm
@@ -26,6 +30,15 @@ try:
 except ImportError:
     VIETOCR_AVAILABLE = False
 
+# Qwen2.5-VL for optional OCR engine
+QWEN_VL_AVAILABLE = False
+try:
+    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+    from qwen_vl_utils import process_vision_info
+    QWEN_VL_AVAILABLE = True
+except ImportError:
+    pass
+
 
 def get_device() -> str:
     """
@@ -36,6 +49,27 @@ def get_device() -> str:
     if torch.cuda.is_available():
         return "cuda"
     return "cpu"
+
+
+def get_gpu_memory_gib() -> float:
+    """Return GPU 0 total memory in GiB, or 0 if no CUDA."""
+    if not torch.cuda.is_available():
+        return 0.0
+    try:
+        return torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+    except Exception:
+        return 0.0
+
+
+def resize_image_for_qwen(image_np, max_size: int = 1024):
+    """Resize image so longer side <= max_size to reduce VRAM. Returns PIL Image."""
+    h, w = image_np.shape[:2]
+    if max(h, w) <= max_size:
+        return Image.fromarray(cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB))
+    scale = max_size / max(h, w)
+    new_w, new_h = int(w * scale), int(h * scale)
+    resized = cv2.resize(image_np, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    return Image.fromarray(cv2.cvtColor(resized, cv2.COLOR_BGR2RGB))
 
 
 def sort_bboxes_by_position(bboxes):
@@ -164,9 +198,14 @@ def process_pdf_to_docx(
     dpi: int = 300,
     enable_ocr: bool = True,
     max_pages: int = None,
-    ocr_weight: str = None
+    ocr_weight: str = None,
+    ocr_engine: str = "vietocr",
+    ocr_model_path: str = None,
+    use_4bit: bool = False,
+    qwen_per_page: bool = True,
 ):
-    """Complete pipeline: PDF → Single DOCX using VietOCR"""
+    """Complete pipeline: PDF → Single DOCX. OCR engine: 'vietocr' or 'qwen_vl'.
+    When ocr_engine=qwen_vl and qwen_per_page=True: one Qwen call per page (no YOLO), fast text-only."""
     
     pdf_path = Path(pdf_path)
     if not pdf_path.exists():
@@ -178,39 +217,117 @@ def process_pdf_to_docx(
     else:
         output_docx = Path(output_docx)
     
+    ocr_engine = (ocr_engine or "vietocr").lower().strip()
+    if ocr_engine not in ("vietocr", "qwen_vl"):
+        ocr_engine = "vietocr"
+    
+    use_qwen_per_page = (ocr_engine == "qwen_vl" and qwen_per_page)
+    
     print("=" * 80)
-    print("COMPLETE PDF PROCESSING PIPELINE (VietOCR Batch Mode)")
+    print("COMPLETE PDF PROCESSING PIPELINE (" + ("Qwen2.5-VL (1 page = 1 call, text only)" if use_qwen_per_page else "Qwen2.5-VL" if ocr_engine == "qwen_vl" else "VietOCR") + ")")
     print("=" * 80)
     print(f"PDF: {pdf_path.name}")
     print(f"Output: {output_docx.name}")
+    # Show device: prefer GPU when available
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        print(f"Device: GPU ({gpu_name}, {gpu_mem:.1f} GB VRAM)")
+    else:
+        print("Device: CPU (no CUDA GPU detected)")
     print()
     
-    # Step 1: Load YOLO model
-    print("[Step 1] Loading YOLO model...")
-    model = YOLOv10(str(model_path))
+    # Step 1: Load YOLO only when not using per-page Qwen (saves time and memory)
+    model = None
     device = get_device()
-    print(f"  Using device: {device} (GPU ưu tiên, fallback CPU nếu không có)")
-    print("  ✓ YOLO Model loaded")
+    if not use_qwen_per_page:
+        print("[Step 1] Loading YOLO model...")
+        model = YOLOv10(str(model_path))
+        print(f"  Using device: {device} (GPU ưu tiên, fallback CPU nếu không có)")
+        print("  ✓ YOLO Model loaded")
+    else:
+        print("[Step 1] Skipping YOLO (Qwen per-page mode: text only, 1 call per page)")
     
     # Step 2: Load OCR models if enabled
     detector = None
+    qwen_model = None
+    processor = None
     if enable_ocr:
-        if not VIETOCR_AVAILABLE:
-            print("  ⚠️  VietOCR not available, skipping OCR step")
-            enable_ocr = False
-        else:
-            print("\n[Step 2] Loading VietOCR model...")
-            config = Cfg.load_config_from_name('vgg_transformer')
-            config['cnn']['pretrained'] = False
-            # Dùng cùng device với YOLO: ưu tiên GPU, nếu không có thì CPU
-            config['device'] = f"{device}:0" if device.startswith("cuda") else "cpu"
-            if ocr_weight and Path(ocr_weight).exists():
-                print(f"  Using local OCR weights: {ocr_weight}")
-                config['weights'] = str(ocr_weight)
+        if ocr_engine == "qwen_vl":
+            if not QWEN_VL_AVAILABLE:
+                print("  ⚠️  Qwen2.5-VL not available (transformers, qwen_vl_utils). Falling back to VietOCR if available.")
+                ocr_engine = "vietocr"
             else:
-                config['weights'] = 'https://vocr.vn/data/vietocr/vgg_transformer.pth'
-            detector = Predictor(config)
-            print("  ✓ OCR model loaded")
+                _root = Path(__file__).resolve().parent
+                qwen_path = ocr_model_path or str(_root / "Qwen2.5-VL-3B")
+                print(f"\n[Step 2] Loading Qwen2.5-VL OCR model from '{qwen_path}'...")
+                qwen_loaded = False
+                try_4bit = use_4bit
+                try:
+                    gpu_gib = get_gpu_memory_gib()
+                    try_4bit = use_4bit or (gpu_gib > 0 and gpu_gib < 18)
+                    if try_4bit and not use_4bit:
+                        print(f"  Auto-enabling 4-bit quantization (GPU {gpu_gib:.1f} GiB)")
+                    model_kwargs = {"device_map": "auto"}
+                    if try_4bit:
+                        try:
+                            from transformers import BitsAndBytesConfig
+                            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                                load_in_4bit=True,
+                                bnb_4bit_compute_dtype=torch.float16,
+                                bnb_4bit_quant_type="nf4",
+                                bnb_4bit_use_double_quant=True,
+                            )
+                            print("  Using 4-bit quantization")
+                        except Exception as _:
+                            print("  4-bit config failed, loading in fp16")
+                            model_kwargs.pop("quantization_config", None)
+                            model_kwargs["torch_dtype"] = torch.float16
+                    else:
+                        model_kwargs["torch_dtype"] = torch.float16
+                    qwen_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(qwen_path, **model_kwargs)
+                    processor = AutoProcessor.from_pretrained(qwen_path)
+                    processor.tokenizer.padding_side = "left"
+                    print("  ✓ Qwen2.5-VL OCR model loaded")
+                    qwen_loaded = True
+                except Exception as e:
+                    # Often "No package metadata for bitsandbytes" when 4-bit requested; retry fp16
+                    if try_4bit and ("bitsandbytes" in str(e).lower() or "metadata" in str(e).lower()):
+                        print(f"  4-bit failed ({e}), retrying in fp16...")
+                        try:
+                            model_kwargs = {"device_map": "auto", "torch_dtype": torch.float16}
+                            qwen_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(qwen_path, **model_kwargs)
+                            processor = AutoProcessor.from_pretrained(qwen_path)
+                            processor.tokenizer.padding_side = "left"
+                            print("  ✓ Qwen2.5-VL OCR model loaded (fp16)")
+                            qwen_loaded = True
+                        except Exception as e2:
+                            print(f"  ⚠️  Failed to load Qwen2.5-VL: {e2}. Falling back to VietOCR.")
+                    if not qwen_loaded:
+                        print(f"  ⚠️  Failed to load Qwen2.5-VL: {e}. Falling back to VietOCR.")
+                        ocr_engine = "vietocr"
+                        qwen_model = None
+                        processor = None
+                        if model is None:
+                            print("  Loading YOLO model for VietOCR pipeline...")
+                            model = YOLOv10(str(model_path))
+                            print("  ✓ YOLO model loaded")
+        if ocr_engine == "vietocr":
+            if not VIETOCR_AVAILABLE:
+                print("  ⚠️  VietOCR not available, skipping OCR step")
+                enable_ocr = False
+            else:
+                print("\n[Step 2] Loading VietOCR model...")
+                config = Cfg.load_config_from_name('vgg_transformer')
+                config['cnn']['pretrained'] = False
+                config['device'] = f"{device}:0" if device.startswith("cuda") else "cpu"
+                if ocr_weight and Path(ocr_weight).exists():
+                    print(f"  Using local OCR weights: {ocr_weight}")
+                    config['weights'] = str(ocr_weight)
+                else:
+                    config['weights'] = 'https://vocr.vn/data/vietocr/vgg_transformer.pth'
+                detector = Predictor(config)
+                print("  ✓ VietOCR model loaded")
     
     # Step 3: Convert PDF to images
     print(f"\n[Step 3] Converting PDF to images (DPI={dpi})...")
@@ -222,8 +339,85 @@ def process_pdf_to_docx(
     else:
         print(f"  ✓ Converted {len(images)} pages to images")
     
-    # Create Word document early
-    print("\n[Step 4] Processing pages & generating Word document...")
+    # ----- Fast path: Qwen per-page (1 call per page, text only, no YOLO) — sequential + prep thread -----
+    if use_qwen_per_page and qwen_model is not None and processor is not None and enable_ocr:
+        # Resize images to this max size to reduce VRAM (vision encoder memory scales with resolution)
+        max_image_size = 1024
+        print(f"\n[Step 4] Qwen per-page: sequential inference, 1 thread prepares next page (max image size={max_image_size})...")
+        doc = Document()
+        for section in doc.sections:
+            section.top_margin = Cm(2.0)
+            section.bottom_margin = Cm(2.0)
+            section.left_margin = Cm(2.0)
+            section.right_margin = Cm(2.0)
+        prompt_text = "Trích xuất toàn bộ văn bản trong ảnh trang tài liệu theo thứ tự đọc. Chỉ xuất văn bản thuần, không định dạng, không giải thích."
+
+        next_pil_container = [None]
+        next_thread = None
+        for page_idx in range(len(images)):
+            if next_thread is not None:
+                next_thread.join()
+                next_thread = None
+            current_pil = next_pil_container[0] if page_idx > 0 else resize_image_for_qwen(images[0], max_image_size)
+            if page_idx == 0:
+                next_pil_container[0] = current_pil
+            if page_idx + 1 < len(images):
+                def _prepare_next(idx):
+                    next_pil_container[0] = resize_image_for_qwen(images[idx], max_image_size)
+                next_thread = threading.Thread(target=_prepare_next, args=(page_idx + 1,))
+                next_thread.start()
+
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": "Bạn là công cụ OCR. Nhiệm vụ: nhận diện toàn bộ văn bản trong ảnh trang tài liệu theo thứ tự đọc, xuất ra văn bản thuần."}]},
+                {"role": "user", "content": [{"type": "image", "image": current_pil}, {"type": "text", "text": prompt_text}]},
+            ]
+            inputs = None
+            try:
+                text_inputs = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                image_inputs, video_inputs = process_vision_info(messages)
+                inputs = processor(text=text_inputs, images=image_inputs, videos=video_inputs, return_tensors="pt")
+                inputs = inputs.to(qwen_model.device)
+                with torch.no_grad():
+                    generated_ids = qwen_model.generate(**inputs, max_new_tokens=512)
+                generated_ids_trimmed = generated_ids[0][inputs.input_ids.shape[1]:]
+                text = processor.decode(generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False).strip()
+                text = text.replace("```", "").strip()
+                del generated_ids, generated_ids_trimmed
+            except Exception as e:
+                print(f"    ⚠️  Page {page_idx + 1} failed: {e}", flush=True)
+                text = ""
+            finally:
+                del messages
+                if inputs is not None:
+                    del inputs
+                # Clear GPU cache every 5 pages to reduce sync overhead; less often = faster (PyTorch reuses cache)
+                if torch.cuda.is_available() and (page_idx + 1) % 5 == 0:
+                    torch.cuda.empty_cache()
+                gc.collect()
+
+            if page_idx > 0:
+                doc.add_page_break()
+            if text:
+                for block in text.split("\n\n"):
+                    block = block.strip()
+                    if block:
+                        p = doc.add_paragraph(block)
+                        p.paragraph_format.space_after = Pt(2)
+                        for r in p.runs:
+                            r.font.name = "Times New Roman"
+                            r.font.size = Pt(12)
+            print(f"  Page {page_idx + 1}/{len(images)} done.", flush=True)
+
+        try:
+            doc.save(str(output_docx))
+            print(f"\n  ✓ Saved to: {output_docx} ({len(images)} pages)")
+        except Exception as e:
+            print(f"\n  ⚠️  Save error: {e}")
+        print("PROCESSING COMPLETE (Qwen per-page, sequential)", flush=True)
+        return output_docx
+    
+    # ----- Standard path: YOLO + per-bbox OCR (VietOCR or Qwen) -----
+    print("\n[Step 4] Processing pages & generating Word document (YOLO + OCR)...")
     doc = Document()
     for section in doc.sections:
         section.top_margin = Cm(2.0)
@@ -290,6 +484,9 @@ def process_pdf_to_docx(
         valid_boxes = []
         all_line_images = []
         box_to_lines = []
+        # For Qwen2.5-VL: list of (box, score, class_name, bbox_image) and batch messages
+        qwen_valid_boxes = []
+        qwen_messages_batch = []
         
         for idx, (box, score, class_name) in enumerate(zip(filtered_boxes, filtered_scores, filtered_class_names)):
             x1, y1, x2, y2 = box
@@ -305,7 +502,20 @@ def process_pdf_to_docx(
             bbox_image = crop_bbox(image, box, padding=10)
             if bbox_image.shape[0] == 0 or bbox_image.shape[1] == 0:
                 continue
-                
+            
+            if ocr_engine == "qwen_vl" and qwen_model is not None and processor is not None:
+                pil_crop = Image.fromarray(cv2.cvtColor(bbox_image, cv2.COLOR_BGR2RGB))
+                prompt_text = (
+                    "Trích xuất văn bản trong ảnh. Chỉ xuất văn bản thuần, không định dạng, không giải thích."
+                )
+                messages = [
+                    {"role": "system", "content": [{"type": "text", "text": "Bạn là công cụ OCR. Nhiệm vụ: nhận diện chính xác văn bản trong ảnh và xuất ra văn bản thuần."}]},
+                    {"role": "user", "content": [{"type": "image", "image": pil_crop}, {"type": "text", "text": prompt_text}]},
+                ]
+                qwen_valid_boxes.append({"box": box, "score": score, "class_name": class_name})
+                qwen_messages_batch.append(messages)
+                continue
+            
             line_boxes = get_tight_text_boxes(bbox_image)
             lines_in_this_box = 0
             
@@ -333,10 +543,43 @@ def process_pdf_to_docx(
                 box_to_lines.append(lines_in_this_box)
 
         page_bboxes = []
-        if enable_ocr and all_line_images:
+        if ocr_engine == "qwen_vl" and enable_ocr and qwen_model is not None and processor is not None and qwen_messages_batch:
+            BATCH_SIZE = 8
+            print(f"    Running Qwen2.5-VL OCR for {len(qwen_messages_batch)} bboxes (batch size {BATCH_SIZE})...")
+            all_texts = []
+            for i in range(0, len(qwen_messages_batch), BATCH_SIZE):
+                batch_msgs = qwen_messages_batch[i:i + BATCH_SIZE]
+                try:
+                    text_inputs = processor.apply_chat_template(batch_msgs, tokenize=False, add_generation_prompt=True)
+                    image_inputs, video_inputs = process_vision_info(batch_msgs)
+                    inputs = processor(text=text_inputs, images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt")
+                    inputs = inputs.to(qwen_model.device)
+                    with torch.no_grad():
+                        generated_ids = qwen_model.generate(**inputs, max_new_tokens=512)
+                    generated_ids_trimmed = [out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)]
+                    texts = processor.batch_decode(generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+                    all_texts.extend(texts)
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception as e:
+                    print(f"    ⚠️  Qwen batch failed: {e}")
+                    all_texts.extend([""] * len(batch_msgs))
+            for j, info in enumerate(qwen_valid_boxes):
+                text = (all_texts[j].strip() if j < len(all_texts) else "").replace("```", "").strip()
+                if not text:
+                    continue
+                box = info["box"]
+                x1, y1, x2, y2 = box
+                page_bboxes.append({
+                    "class": info["class_name"],
+                    "confidence": float(info["score"]),
+                    "text": text,
+                    "x1": float(x1), "y1": float(y1), "x2": float(x2), "y2": float(y2),
+                    "center_x": (x1 + x2) / 2, "center_y": (y1 + y2) / 2,
+                })
+        elif enable_ocr and all_line_images:
             print(f"    Running VietOCR in batch mode for {len(all_line_images)} lines across {len(valid_boxes)} bboxes...")
             try:
-                # predict_batch with return_prob=True returns a tuple of lists: (texts, probs)
                 batch_res = detector.predict_batch(all_line_images, return_prob=True)
                 all_texts = list(zip(batch_res[0], batch_res[1]))
             except Exception as e:
@@ -351,28 +594,18 @@ def process_pdf_to_docx(
                 box_texts = all_texts[curr_idx : curr_idx + num_lines]
                 curr_idx += num_lines
                 
-                # Join text elements with a space
-                # Filter out pure hallucinations using the prediction confidence score and noise logic
                 filtered_texts = []
                 for (text_raw, prob) in box_texts:
                     text_str = text_raw.strip()
                     if not text_str:
                         continue
-                        
-                    # VietOCR confidence drops significantly on watermarks/noise (usually < 0.65)
-                    # Safe text is almost always > 0.75
                     if prob < 0.60:
-                        # Too risky, probably reading a watermark or background noise
                         continue
-                        
                     text_no_space = text_str.replace(' ', '').replace('.', '').replace(',', '')
-                    # Aggressive filter for "0310...10111" purely digit watermarks or VVVVV gibberish
                     if len(text_no_space) > 5 and sum(c.isdigit() for c in text_no_space) / max(1, len(text_no_space)) > 0.7:
                         continue
                     if len(text_str) > 8 and ' ' not in text_str and text_str.isupper() and prob < 0.85:
-                        # Typical uppercase English hallucinations (NEWSHOWER, TRANSFITTERING)
                         continue
-                        
                     filtered_texts.append(text_str)
 
                 text = " ".join(filtered_texts)
@@ -436,7 +669,8 @@ def process_pdf_to_docx(
     return output_docx
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='PDF to DOCX using VietOCR Batch')
+    _root = Path(__file__).resolve().parent
+    parser = argparse.ArgumentParser(description='PDF to DOCX (VietOCR or Qwen2.5-VL)')
     parser.add_argument('pdf_path', type=str, help='Path to PDF file')
     parser.add_argument('--output', type=str, default=None, help='Output DOCX file path')
     parser.add_argument('--model', type=str, default='doclayout_yolo_docstructbench_imgsz1024.pt',
@@ -446,7 +680,14 @@ if __name__ == "__main__":
     parser.add_argument('--dpi', type=int, default=300, help='DPI for PDF conversion')
     parser.add_argument('--no-ocr', action='store_true', help='Disable OCR')
     parser.add_argument('--max-pages', type=int, default=None, help='Maximum pages for testing')
-    parser.add_argument('--ocr-weight', type=str, default='vgg_transformer.pth', help='Path to local VietOCR weight')
+    parser.add_argument('--ocr-weight', type=str, default='vgg_transformer.pth', help='Path to local VietOCR weight (when ocr-engine=vietocr)')
+    parser.add_argument('--ocr-engine', type=str, default='qwen_vl', choices=('vietocr', 'qwen_vl'),
+                        help='OCR engine: vietocr or qwen_vl (default: qwen_vl for higher accuracy)')
+    parser.add_argument('--ocr-model', type=str, default=str(_root / 'Qwen2.5-VL-3B'),
+                        help='Path or HuggingFace ID for Qwen2.5-VL (when ocr-engine=qwen_vl)')
+    parser.add_argument('--use-4bit', action='store_true', help='Use 4-bit quantization for Qwen2.5-VL (saves VRAM)')
+    parser.add_argument('--no-qwen-per-page', action='store_true',
+                        help='Use YOLO+per-bbox Qwen (slower). Default: 1 Qwen call per page for speed.')
     
     args = parser.parse_args()
     
@@ -459,5 +700,9 @@ if __name__ == "__main__":
         dpi=args.dpi,
         enable_ocr=not args.no_ocr,
         max_pages=args.max_pages,
-        ocr_weight=args.ocr_weight
+        ocr_weight=args.ocr_weight,
+        ocr_engine=args.ocr_engine,
+        ocr_model_path=args.ocr_model,
+        use_4bit=args.use_4bit,
+        qwen_per_page=not args.no_qwen_per_page,
     )

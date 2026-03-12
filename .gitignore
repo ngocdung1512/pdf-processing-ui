@@ -84,3 +84,7 @@ output/
 outputs/
 tmp/
 temp/
+
+# Package manager caches
+.npm-cache/
+.pip-cache/

@@ -87,12 +87,13 @@ def detect_bboxes(model, image: np.ndarray, imgsz: int = 1024, conf: float = 0.1
     else:
         image_rgb = image
     
-    # Run prediction
+    # Run prediction (verbose=False to avoid repeated "Ultralytics YOLOv..." and "Speed:..." when running in parallel workers)
     det_res = model.predict(
         image_rgb,
         imgsz=imgsz,
         conf=conf,
         device='cuda' if torch.cuda.is_available() else 'cpu',
+        verbose=False,
     )
     
     # Get results from first (and only) result

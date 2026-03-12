@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kiểm tra Chatbot</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.25rem; }
+    .ok { color: #059669; }
+    .fail { color: #dc2626; }
+    .box { background: #f3f4f6; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; }
+    ul { margin: 0.5rem 0; padding-left: 1.25rem; }
+  </style>
+</head>
+<body>
+  <h1>Kiểm tra Chatbot (AnythingLLM)</h1>
+  <p>Trang này kiểm tra Server (4101) và Frontend (3002) có chạy không.</p>
+  <div class="box">
+    <p><strong>Chatbot Server (4101):</strong> <span id="s4101">Đang kiểm tra...</span></p>
+    <p><strong>Chatbot Frontend (3002):</strong> <span id="s3002">Đang kiểm tra...</span></p>
+  </div>
+  <div id="next" class="box" style="display:none;">
+    <p><strong>Nếu trang chatbot (3002) vẫn trắng:</strong></p>
+    <ul>
+      <li>Chạy <code>.\start-dev.bat</code> và giữ <strong>5 cửa sổ CMD</strong> mở.</li>
+      <li>Lần đầu: <code>cd OCR_LLM && yarn setup</code>, sau đó chạy lại start-dev.bat.</li>
+      <li>Xem thêm: OCR_LLM/CHATBOT_SETUP.md</li>
+    </ul>
+  </div>
+  <script>
+    (function () {
+      var s4101 = document.getElementById("s4101");
+      var s3002 = document.getElementById("s3002");
+      var next = document.getElementById("next");
+      function set4101(ok) {
+        s4101.textContent = ok ? "Đang chạy" : "Không kết nối được";
+        s4101.className = ok ? "ok" : "fail";
+      }
+      function set3002(ok) {
+        s3002.textContent = ok ? "Đang chạy" : "Không kết nối được";
+        s3002.className = ok ? "ok" : "fail";
+      }
+      fetch("http://localhost:4101/api/ping").then(function (r) {
+        set4101(r.ok);
+      }).catch(function () {
+        set4101(false);
+      });
+      fetch("http://localhost:3002/", { mode: "no-cors" }).then(function () {
+        set3002(true);
+      }).catch(function () {
+        fetch("http://localhost:3002/", { method: "HEAD" }).then(function (r) {
+          set3002(r.type !== "error");
+        }).catch(function () {
+          set3002(false);
+        });
+      });
+      setTimeout(function () {
+        if (s4101.textContent === "Đang kiểm tra...") set4101(false);
+        if (s3002.textContent === "Đang kiểm tra...") set3002(false);
+        next.style.display = "block";
+      }, 4000);
+    })();
+  </script>
+</body>
+</html>
