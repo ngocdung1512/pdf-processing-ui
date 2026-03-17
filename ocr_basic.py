@@ -1,43 +1,4 @@
-"""
-Complete PDF processing pipeline: PDF → Single DOCX file
-Supports two OCR engines: Qwen2.5-VL (default) or VietOCR.
-Pipeline: Detection (YOLO) → OCR (Qwen2.5-VL or VietOCR) → Top-to-Bottom Export
-"""
-import sys
-import argparse
-import math
-import gc
-import threading
-from pathlib import Path
-from docx import Document
-from docx.shared import Pt, Cm
-from docx.enum.text import WD_BREAK
-
-# Import from existing scripts
-from test_yolo_detect_pdf import (
-    pdf_to_images, detect_bboxes, crop_bbox
-)
-from doclayout_yolo import YOLOv10
-import torch
-import numpy as np
-import cv2
-from PIL import Image
-
-try:
-    from vietocr.tool.predictor import Predictor
-    from vietocr.tool.config import Cfg
-    VIETOCR_AVAILABLE = True
-except ImportError:
-    VIETOCR_AVAILABLE = False
-
-# Qwen2.5-VL for optional OCR engine
-QWEN_VL_AVAILABLE = False
-try:
-    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
-    from qwen_vl_utils import process_vision_info
-    QWEN_VL_AVAILABLE = True
-except ImportError:
-    pass
+from examples.ocr_basic import main
 
 
 def get_device() -> str:
@@ -669,40 +630,4 @@ def process_pdf_to_docx(
     return output_docx
 
 if __name__ == "__main__":
-    _root = Path(__file__).resolve().parent
-    parser = argparse.ArgumentParser(description='PDF to DOCX (VietOCR or Qwen2.5-VL)')
-    parser.add_argument('pdf_path', type=str, help='Path to PDF file')
-    parser.add_argument('--output', type=str, default=None, help='Output DOCX file path')
-    parser.add_argument('--model', type=str, default='doclayout_yolo_docstructbench_imgsz1024.pt',
-                        help='Path to YOLO model file')
-    parser.add_argument('--imgsz', type=int, default=1024, help='Image size for inference')
-    parser.add_argument('--conf', type=float, default=0.1, help='Confidence threshold')
-    parser.add_argument('--dpi', type=int, default=300, help='DPI for PDF conversion')
-    parser.add_argument('--no-ocr', action='store_true', help='Disable OCR')
-    parser.add_argument('--max-pages', type=int, default=None, help='Maximum pages for testing')
-    parser.add_argument('--ocr-weight', type=str, default='vgg_transformer.pth', help='Path to local VietOCR weight (when ocr-engine=vietocr)')
-    parser.add_argument('--ocr-engine', type=str, default='qwen_vl', choices=('vietocr', 'qwen_vl'),
-                        help='OCR engine: vietocr or qwen_vl (default: qwen_vl for higher accuracy)')
-    parser.add_argument('--ocr-model', type=str, default=str(_root / 'Qwen2.5-VL-3B'),
-                        help='Path or HuggingFace ID for Qwen2.5-VL (when ocr-engine=qwen_vl)')
-    parser.add_argument('--use-4bit', action='store_true', help='Use 4-bit quantization for Qwen2.5-VL (saves VRAM)')
-    parser.add_argument('--no-qwen-per-page', action='store_true',
-                        help='Use YOLO+per-bbox Qwen (slower). Default: 1 Qwen call per page for speed.')
-    
-    args = parser.parse_args()
-    
-    process_pdf_to_docx(
-        pdf_path=args.pdf_path,
-        output_docx=args.output,
-        model_path=args.model,
-        imgsz=args.imgsz,
-        conf=args.conf,
-        dpi=args.dpi,
-        enable_ocr=not args.no_ocr,
-        max_pages=args.max_pages,
-        ocr_weight=args.ocr_weight,
-        ocr_engine=args.ocr_engine,
-        ocr_model_path=args.ocr_model,
-        use_4bit=args.use_4bit,
-        qwen_per_page=not args.no_qwen_per_page,
-    )
+    main()
