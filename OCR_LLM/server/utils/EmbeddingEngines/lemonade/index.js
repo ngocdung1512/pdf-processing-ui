@@ -1,3 +1,4 @@
+const { toChunks } = require("../../helpers");
 const { parseLemonadeServerEndpoint } = require("../../AiProviders/lemonade");
 
 class LemonadeEmbedder {

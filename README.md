@@ -99,7 +99,7 @@ npm run chatbot:setup
 ```
 
 (Lệnh này cài dependency + Prisma cho server/frontend/collector trong `OCR_LLM`.)  
-*Cần Yarn: `npm install -g yarn` nếu chưa có. Chi tiết: [OCR_LLM/RUN_IN_PROJECT.md](./OCR_LLM/RUN_IN_PROJECT.md).*
+*Cần Yarn: `npm install -g yarn` nếu chưa có. Chi tiết: [OCR_LLM/CHATBOT_SETUP.md](./OCR_LLM/CHATBOT_SETUP.md).*
 
 ### Bước 8: Chạy ứng dụng
 
@@ -133,7 +133,7 @@ Hoặc double-click file `start-dev.bat`. Script sẽ mở backend (port 8000), 
 ### 🤖 Chatbot (OCR_LLM)
 
 - **Cài lần đầu:** `npm run chatbot:setup` (từ thư mục gốc).
-- **Chạy:** Bấm "Mở trợ lý chatbot" trên giao diện hoặc mở http://localhost:3002. Chi tiết: [OCR_LLM/RUN_IN_PROJECT.md](./OCR_LLM/RUN_IN_PROJECT.md).
+- **Chạy:** Bấm "Mở trợ lý chatbot" trên giao diện hoặc mở http://localhost:3002. Chi tiết: [OCR_LLM/CHATBOT_SETUP.md](./OCR_LLM/CHATBOT_SETUP.md).
 
 
 

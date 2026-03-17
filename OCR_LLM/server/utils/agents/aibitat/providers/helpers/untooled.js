@@ -123,9 +123,11 @@ ${JSON.stringify(def.parameters.properties, null, 4)}\n`;
       {
         content: `You are a program which picks the most optimal function and parameters to call.
       DO NOT HAVE TO PICK A FUNCTION IF IT WILL NOT HELP ANSWER OR FULFILL THE USER'S QUERY.
-      When a function is selection, respond in JSON with no additional text.
+      When a function is selected, respond in JSON with no additional text.
       When there is no relevant function to call - return with a regular chat text response.
       Your task is to pick a **single** function that we will use to call, if any seem useful or relevant for the user query.
+
+      IMPORTANT: If the user asks to save, export, or download any data as a file (CSV, Excel, .xlsx, .csv, text, etc.), you MUST call the save-file-to-browser function. Do NOT say you cannot create files — you have this tool available.
 
       All JSON responses should have two keys.
       'name': this is the name of the function name to call. eg: 'web-scraper', 'rag-memory', etc..
@@ -263,7 +265,6 @@ ${JSON.stringify(def.parameters.properties, null, 4)}\n`;
     eventHandler = null
   ) {
     this.providerLog("Untooled.stream - will process this chat completion.");
-    // eslint-disable-next-line
     try {
       let completion = { content: "" };
       if (functions.length > 0) {
@@ -369,7 +370,6 @@ ${JSON.stringify(def.parameters.properties, null, 4)}\n`;
    */
   async complete(messages, functions = [], chatCallback = null) {
     this.providerLog("Untooled.complete - will process this chat completion.");
-    // eslint-disable-next-line
     try {
       let completion = { content: "" };
       if (functions.length > 0) {

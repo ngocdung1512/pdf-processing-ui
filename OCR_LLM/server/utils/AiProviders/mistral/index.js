@@ -59,7 +59,7 @@ class MistralLLM {
     return 32000;
   }
 
-  async isValidChatCompletionModel(_modelName = "") {
+  async isValidChatCompletionModel(modelName = "") {
     return true;
   }
 

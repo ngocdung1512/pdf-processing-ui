@@ -32,7 +32,7 @@ const KEY_MAPPING = {
     checks: [isNotEmpty],
   },
   AzureOpenAiModelPref: {
-    envKey: "AZURE_OPENAI_MODEL_PREF",
+    envKey: "OPEN_MODEL_PREF",
     checks: [isNotEmpty],
   },
   AzureOpenAiEmbeddingModelPref: {
@@ -562,6 +562,14 @@ const KEY_MAPPING = {
   },
 
   // Agent Integration ENVs
+  AgentGoogleSearchEngineId: {
+    envKey: "AGENT_GSE_CTX",
+    checks: [],
+  },
+  AgentGoogleSearchEngineKey: {
+    envKey: "AGENT_GSE_KEY",
+    checks: [],
+  },
   AgentSerpApiKey: {
     envKey: "AGENT_SERPAPI_API_KEY",
     checks: [],
@@ -853,7 +861,7 @@ function isValidURL(input = "") {
   try {
     new URL(input);
     return null;
-  } catch {
+  } catch (e) {
     return "URL is not a valid URL.";
   }
 }

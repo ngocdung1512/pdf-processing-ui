@@ -5,6 +5,8 @@ import Actions from "./Actions";
 import renderMarkdown from "@/utils/chat/markdown";
 import { userFromStorage } from "@/utils/request";
 import Citations from "../Citation";
+import TableDownloadCard from "../TableDownloadCard";
+import ReportDownloadCard from "../ReportDownloadCard";
 import { v4 } from "uuid";
 import DOMPurify from "@/utils/chat/purify";
 import { EditMessageForm, useEditMessage } from "./Actions/EditMessage";
@@ -117,6 +119,8 @@ const HistoricalMessage = ({
                 message={message}
                 messageId={uuid}
               />
+              <TableDownloadCard message={message} role={role} />
+              <ReportDownloadCard message={message} role={role} />
               {isRefusalMessage && (
                 <Link
                   data-tooltip-id="query-refusal-info"

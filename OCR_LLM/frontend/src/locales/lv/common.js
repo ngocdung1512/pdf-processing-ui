@@ -103,12 +103,6 @@ const TRANSLATIONS = {
     contact: "Sazināties ar atbalstu",
     "browser-extension": "Pārlūka paplašinājums",
     "mobile-app": "AnythingLLM mobilā versija",
-    "community-hub": {
-      title: "Sabiedriskais centrs",
-      trending: "Izpētiet populārākās",
-      "your-account": "Jūsu konts",
-      "import-item": "Importētā prece",
-    },
   },
   login: {
     "multi-user": {
@@ -412,16 +406,11 @@ const TRANSLATIONS = {
       },
       web: {
         title: "Tiešsaistes tīmekļa meklēšana un pārlūkošana",
-        description:
-          "Iegādājieties iespēju, lai jūsu aģents varētu meklēt informāciju internetā, lai atbildētu uz jūsu jautājumiem, pieslēdzoties tīmekļa meklēšanas (SERP) pakalpojuma sniedzējam.",
+        "desc-start":
+          "Ļaujiet savam aģentam meklēt tīmeklī, lai atbildētu uz jūsu jautājumiem, savienojoties ar tīmekļa meklēšanas (SERP) pakalpojumu sniedzēju.",
+        "desc-end":
+          "Tīmekļa meklēšana aģenta sesijās nedarbosies, līdz tas nebūs iestatīts.",
       },
-      sql: {
-        title: "SQL savienotājs",
-        description:
-          "Ļauj savam pārstāvim izmantot SQL, lai atbildētu uz jūsu jautājumiem, savienojoties ar dažādiem SQL datubāzes sniedzējiem.",
-      },
-      default_skill:
-        "Par iestatījumu, šī spēja ir aktivizēta, taču jūs varat to izslēgt, ja nevēlaties, lai tā būtu pieejama aģentam.",
     },
   },
   recorded: {

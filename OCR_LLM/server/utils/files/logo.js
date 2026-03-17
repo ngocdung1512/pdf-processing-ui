@@ -38,10 +38,7 @@ async function determineLogoFilepath(defaultFilename = LOGO_FILENAME) {
   const defaultFilepath = path.join(basePath, defaultFilename);
 
   if (currentLogoFilename && validFilename(currentLogoFilename)) {
-    const customLogoPath = path.join(
-      basePath,
-      normalizePath(currentLogoFilename)
-    );
+    customLogoPath = path.join(basePath, normalizePath(currentLogoFilename));
     if (!isWithin(path.resolve(basePath), path.resolve(customLogoPath)))
       return defaultFilepath;
     return fs.existsSync(customLogoPath) ? customLogoPath : defaultFilepath;

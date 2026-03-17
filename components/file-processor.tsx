@@ -289,19 +289,12 @@ function BasicOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
 }
 
 export function FileProcessor() {
-  const [activeMode, setActiveMode] = useState<"none" | "basic" | "advanced">("none")
-
   return (
-    <div className="grid gap-4 lg:gap-6 lg:grid-cols-3 h-full">
-      <BasicOcrCard
-        isLocked={activeMode === "advanced"}
-        onLock={() => setActiveMode("basic")}
-        onUnlock={() => setActiveMode((m) => (m === "basic" ? "none" : m))}
-      />
+    <div className="grid gap-4 lg:gap-6 lg:grid-cols-2 h-full">
       <AdvancedOcrCard
-        isLocked={activeMode === "basic"}
-        onLock={() => setActiveMode("advanced")}
-        onUnlock={() => setActiveMode((m) => (m === "advanced" ? "none" : m))}
+        isLocked={false}
+        onLock={() => {}}
+        onUnlock={() => {}}
       />
       <ChatbotCard />
     </div>
@@ -310,35 +303,36 @@ export function FileProcessor() {
 
 function ChatbotCard() {
   return (
-    <div className="bg-white rounded-2xl border border-dashed border-emerald-100 p-6 md:p-8 transition-all shadow-sm hover:shadow-md relative overflow-hidden h-full">
-      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-400 via-sky-400 to-emerald-300 opacity-40" />
+    <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-6 md:p-8 shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5 relative overflow-hidden h-full min-h-[420px] flex flex-col">
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-sky-500 to-emerald-400 opacity-60" />
 
-      <div className="flex flex-col items-center justify-center text-center space-y-5">
+      <div className="flex flex-col items-center justify-start text-center space-y-5 flex-1 pt-0">
         <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
           Chế độ chatbot
         </div>
-        <h2 className="text-xl font-bold text-gray-800 mb-1">Trợ lý chatbot văn bản</h2>
-        <p className="text-sm text-gray-500 max-w-md">
-          Chatbot hỗ trợ giải đáp thắc mắc về văn bản hành chính, tóm tắt, giải thích nội dung và gợi ý soạn thảo sau khi bạn
-          chuyển đổi tài liệu.
+        <h2 className="text-xl font-bold text-gray-900 mb-1">Trợ lý chatbot văn bản</h2>
+        <p className="text-sm text-gray-500 max-w-md leading-snug">
+          Chatbot hỗ trợ giải đáp thắc mắc về văn bản hành chính, tóm tắt, giải thích nội dung và gợi ý soạn thảo sau khi bạn chuyển đổi tài liệu.
         </p>
 
-        <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mb-2 border border-emerald-100">
-          <MessageCircle className="w-7 h-7 text-emerald-500" />
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-2 border border-emerald-100 bg-gradient-to-br from-emerald-50 via-sky-50 to-white shadow-sm">
+          <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-inner">
+            <MessageCircle className="w-7 h-7 text-emerald-500" />
+          </div>
         </div>
 
         <a
           href="http://localhost:3002"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center justify-center bg-[#0060ac] hover:bg-[#004d8a] text-white px-4 py-3 rounded-md text-sm font-semibold gap-2"
+          className="inline-flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-black text-white px-4 py-3 rounded-md text-sm font-semibold shadow-md hover:shadow-lg transition-all"
         >
           <MessageCircle className="w-4 h-4" />
           Mở trợ lý chatbot
         </a>
 
-        <p className="text-[11px] text-gray-400">
+        <p className="text-[11px] text-gray-400 text-left w-full max-w-md">
           Lưu ý: Yêu cầu môi trường chatbot (AnythingLLM) đang được khởi động trong nền.
         </p>
       </div>
@@ -583,30 +577,32 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
 
   return (
     <div
-      className={`relative h-full overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-6 md:p-8 shadow-md transition-all ${
+      className={`relative h-full min-h-[420px] overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-6 md:p-8 shadow-md transition-all flex flex-col ${
         isLocked ? "opacity-60" : "hover:shadow-lg hover:-translate-y-0.5"
       }`}
     >
       <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-sky-500 to-indigo-400 opacity-60" />
 
       <div
-        className={`flex flex-col items-center justify-center text-center space-y-5 ${
+        className={`flex flex-col items-center justify-start text-center space-y-5 flex-1 pt-0 ${
           isLocked ? "pointer-events-none" : ""
         }`}
       >
         <div className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-3 py-1 text-[11px] font-semibold text-indigo-700">
           <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-          Chế độ nâng cao
+          Chế độ OCR
         </div>
-        <h2 className="text-xl font-bold text-gray-900 mb-1">OCR nâng cao (giữ bố cục)</h2>
+        <h2 className="text-xl font-bold text-gray-900 mb-1">OCR văn bản PDF</h2>
         <p className="text-sm text-gray-500 max-w-md">
-          Phù hợp với PDF scan hoặc tài liệu phức tạp. Hỗ trợ giữ bố cục văn bản gần đúng theo bố cục gốc.
+          Hỗ trợ PDF scan và PDF văn bản, trích xuất nội dung chữ và giữ bố cục gần giống tài liệu gốc.
         </p>
 
         {state === "idle" && (
           <>
-            <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center mb-2 border border-gray-100">
-              <FileText className="w-7 h-7 text-gray-400" />
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-2 border border-indigo-100 bg-gradient-to-br from-indigo-50 via-sky-50 to-white shadow-sm">
+              <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-inner">
+                <FileText className="w-7 h-7 text-indigo-500" />
+              </div>
             </div>
             <input
               type="file"
@@ -619,7 +615,7 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
               onClick={() => fileInputRef.current?.click()}
               className="bg-[#1a1a1a] hover:bg-black text-white px-4 py-3 rounded-md text-sm font-semibold"
             >
-              Chọn PDF cho OCR nâng cao
+              Chọn PDF cần xử lý
             </Button>
             <p className="text-xs text-gray-400">Lên đến 100 MB</p>
           </>
@@ -643,7 +639,7 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
               onClick={handleProcess}
               className="bg-[#0060ac] hover:bg-[#004d8a] text-white px-4 py-3 rounded-md text-sm font-bold w-full max-w-xs"
             >
-              Xử lý
+              Xử lý bằng OCR
             </Button>
           </>
         )}
@@ -753,7 +749,8 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
         )}
 
         <p className="text-[11px] text-gray-400 mt-2">
-          Lưu ý: Thời gian có thể xử lý lâu (từ vài phút tới hàng chục phút, cân nhắc sử dụng chế độ hợp lý).
+          Lưu ý: Thời gian xử lý phụ thuộc vào số trang, độ phức tạp bố cục (bảng, hình, nhiều cột) và dung lượng tệp; các tài liệu dài
+          hoặc nhiều hình ảnh sẽ mất nhiều thời gian hơn.
         </p>
       </div>
 

@@ -315,7 +315,7 @@ class MCPHypervisor {
 
       try {
         new URL(server.url);
-      } catch {
+      } catch (error) {
         throw new Error(`MCP server "${name}": invalid URL "${server.url}"`);
       }
       return;

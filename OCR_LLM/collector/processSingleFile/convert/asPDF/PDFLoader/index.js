@@ -4,6 +4,8 @@ class PDFLoader {
   constructor(filePath, { splitPages = true } = {}) {
     this.filePath = filePath;
     this.splitPages = splitPages;
+    /** Total number of pages in the PDF, set after load() is called. */
+    this.numPages = 0;
   }
 
   async load() {
@@ -16,6 +18,8 @@ class PDFLoader {
       isEvalSupported: false,
       useSystemFonts: true,
     }).promise;
+
+    this.numPages = pdf.numPages;
 
     const meta = await pdf.getMetadata().catch(() => null);
     const documents = [];

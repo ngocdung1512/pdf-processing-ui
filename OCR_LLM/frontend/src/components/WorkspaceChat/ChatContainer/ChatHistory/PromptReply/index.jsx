@@ -4,6 +4,8 @@ import { Warning } from "@phosphor-icons/react";
 import UserIcon from "../../../../UserIcon";
 import renderMarkdown from "@/utils/chat/markdown";
 import Citations from "../Citation";
+import TableDownloadCard from "../TableDownloadCard";
+import ReportDownloadCard from "../ReportDownloadCard";
 import {
   THOUGHT_REGEX_CLOSE,
   THOUGHT_REGEX_COMPLETE,
@@ -67,11 +69,19 @@ const PromptReply = ({
       <div className="py-8 px-4 w-full flex gap-x-5 md:max-w-[80%] flex-col">
         <div className="flex gap-x-5">
           <WorkspaceProfileImage workspace={workspace} />
-          <RenderAssistantChatContent
-            key={`${uuid}-prompt-reply-content`}
-            message={reply}
-            messageId={uuid}
-          />
+          <div className="flex flex-col">
+            <RenderAssistantChatContent
+              key={`${uuid}-prompt-reply-content`}
+              message={reply}
+              messageId={uuid}
+            />
+            {!pending && (
+              <>
+                <TableDownloadCard message={reply} role="assistant" />
+                <ReportDownloadCard message={reply} role="assistant" />
+              </>
+            )}
+          </div>
         </div>
         <Citations sources={sources} />
       </div>

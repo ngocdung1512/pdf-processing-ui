@@ -28,6 +28,11 @@ start "Next.js Frontend - Port 3000" cmd /k "cd /d %CD% && npm run dev && timeou
 REM Also start AnythingLLM servers in background (no browser)
 if exist "scripts\startup\start-chatbot-core.bat" (
     echo.
+    echo Stopping any process on chatbot ports 4101, 8888, 3002...
+    for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":4101 :8888 :3002" ^| findstr "LISTENING" 2^>nul') do (
+      taskkill /PID %%a /F >nul 2>&1
+    )
+    timeout /t 2 /nobreak >nul
     echo Starting AnythingLLM OCR_LLM servers in background...
     start "AnythingLLM Startup" cmd /k "cd /d %CD% && call scripts\startup\start-chatbot-core.bat"
 )

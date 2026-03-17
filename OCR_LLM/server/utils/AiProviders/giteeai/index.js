@@ -89,7 +89,7 @@ class GiteeAILLM {
     );
   }
 
-  async isValidChatCompletionModel(_modelName = "") {
+  async isValidChatCompletionModel(modelName = "") {
     return true;
   }
 

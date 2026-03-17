@@ -1,6 +1,7 @@
 // Plugin CAN ONLY BE USE IN DEVELOPMENT.
 const { input } = require("@inquirer/prompts");
 const chalk = require("chalk");
+const { RetryError } = require("../error");
 
 /**
  * Command-line Interface plugin. It prints the messages on the console and asks for feedback

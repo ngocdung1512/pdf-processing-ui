@@ -225,6 +225,18 @@ Sau khi làm xong 4.1–4.2, chạy lại ứng dụng như **Bước 5** ở tr
 
 ---
 
+## Phần 5: (Tuỳ chọn) Chatbot – Trợ lý văn bản
+
+Nếu muốn dùng nút **"Mở trợ lý chatbot"** trên giao diện (AnythingLLM), làm thêm:
+
+1. Cài Yarn (nếu chưa có): `npm install -g yarn`
+2. Từ thư mục gốc project chạy một lần: `npm run chatbot:setup`
+3. Chạy app bằng **start-dev.bat** như Bước 5 — chatbot sẽ chạy trong nền; mở **http://localhost:3002** hoặc bấm "Mở trợ lý chatbot"
+
+Chi tiết: [OCR_LLM/CHATBOT_SETUP.md](./OCR_LLM/CHATBOT_SETUP.md) và [README.md](./README.md#bước-7-tuỳ-chọn-cài-chatbot-ocr_llm--anythingllm).
+
+---
+
 ## Xử lý lỗi thường gặp
 
 | Lỗi | Cách xử lý |

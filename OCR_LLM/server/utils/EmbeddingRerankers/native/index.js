@@ -44,7 +44,7 @@ class NativeEmbeddingReranker {
     if (!NativeEmbeddingReranker.#transformers) return "https://huggingface.co";
     try {
       return new URL(NativeEmbeddingReranker.#transformers.env.remoteHost).host;
-    } catch {
+    } catch (e) {
       return this.#fallbackHost;
     }
   }

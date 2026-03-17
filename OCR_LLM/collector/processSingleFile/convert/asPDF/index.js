@@ -22,14 +22,20 @@ async function asPdf({
   console.log(`-- Working ${filename} --`);
   const pageContent = [];
   let docs = await pdfLoader.load();
+  const totalPages = pdfLoader.numPages;
 
   if (docs.length === 0) {
+    // Fully image-based (scanned) PDF — no text layer. OCR is disabled.
     console.log(
-      `[asPDF] No text content found for ${filename}. Will attempt OCR parse.`
+      `[asPDF] No text content found for ${filename}. OCR is disabled — skipping.`
     );
-    docs = await new OCRLoader({
-      targetLanguages: options?.ocr?.langList,
-    }).ocrPDF(fullFilePath);
+  } else if (docs.length < totalPages) {
+    // Mixed PDF: some pages have no text layer. OCR is disabled — only text-layer pages are used.
+    console.log(
+      `[asPDF] ${filename} has ${
+        totalPages - docs.length
+      } image-only page(s) out of ${totalPages} total. OCR is disabled — those pages will be skipped.`
+    );
   }
 
   for (const doc of docs) {

@@ -5,6 +5,7 @@ const Provider = require("./aibitat/providers/ai-provider");
 const ImportedPlugin = require("./imported");
 const { AgentFlows } = require("../agentFlows");
 const MCPCompatibilityLayer = require("../MCP");
+const { SystemPromptVariables } = require("../../models/systemPromptVariables");
 
 // This is a list of skills that are built-in and default enabled.
 const DEFAULT_SKILLS = [

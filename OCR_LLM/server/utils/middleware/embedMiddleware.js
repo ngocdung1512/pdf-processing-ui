@@ -157,7 +157,7 @@ async function canRespond(request, response, next) {
     }
 
     next();
-  } catch {
+  } catch (e) {
     response.status(500).json({
       id: uuidv4(),
       type: "abort",

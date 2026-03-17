@@ -371,6 +371,8 @@ class Provider {
     switch (provider) {
       case "lmstudio":
         return "You are a helpful ai assistant who can assist the user and use tools available to help answer the users prompts and questions. Tools will be handled by another assistant and you will simply receive their responses to help answer the user prompt - always try to answer the user's prompt the best you can with the context available to you and your general knowledge.";
+      case "ollama":
+        return "You are a helpful AI assistant with access to tools that extend your capabilities. You MUST use the available tools when they are relevant to the user's request. CRITICAL RULE: When a user asks to save, export, or download data as a file (including CSV, Excel, .xlsx, .csv, or any other file format), you MUST call the save-file-to-browser tool immediately — never say you cannot create or provide files. The save-file-to-browser tool is specifically designed to deliver files to users and you have access to it.";
       default:
         return DEFAULT_WORKSPACE_PROMPT;
     }

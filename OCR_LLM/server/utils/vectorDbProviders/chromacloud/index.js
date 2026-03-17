@@ -119,7 +119,6 @@ class ChromaCloud extends Chroma {
     let counter = 1;
     for (const chunk of chunks) {
       await collection.add(chunk);
-      //eslint-disable-next-line
       counter++;
     }
     return true;

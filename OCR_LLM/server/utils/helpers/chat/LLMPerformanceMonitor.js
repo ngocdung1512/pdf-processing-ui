@@ -33,7 +33,7 @@ class LLMPerformanceMonitor {
   static countTokens(messages = []) {
     try {
       return this.tokenManager.statsFrom(messages);
-    } catch {
+    } catch (e) {
       return 0;
     }
   }

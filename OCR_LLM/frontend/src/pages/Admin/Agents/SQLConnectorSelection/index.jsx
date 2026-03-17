@@ -10,8 +10,6 @@ import { Tooltip } from "react-tooltip";
 
 export default function AgentSQLConnectorSelection({
   skill,
-  title,
-  description,
   toggleSkill,
   enabled = false,
   setHasChanges,
@@ -107,7 +105,7 @@ export default function AgentSQLConnectorSelection({
                 htmlFor="name"
                 className="text-theme-text-primary text-md font-bold"
               >
-                {title}
+                SQL Agent
               </label>
             </div>
             <Toggle
@@ -122,7 +120,8 @@ export default function AgentSQLConnectorSelection({
             className="w-full rounded-md"
           />
           <p className="text-theme-text-secondary text-opacity-60 text-xs font-medium py-1.5">
-            {description}
+            Enable your agent to be able to leverage SQL to answer you questions
+            by connecting to various SQL database providers.
           </p>
           {enabled && (
             <>

@@ -16,6 +16,7 @@ import SpeechToText from "./SpeechToText";
 import { Tooltip } from "react-tooltip";
 import AttachmentManager from "./Attachments";
 import AttachItem from "./AttachItem";
+import DocxTemplateButton from "./DocxTemplateButton";
 import {
   ATTACHMENTS_PROCESSED_EVENT,
   ATTACHMENTS_PROCESSING_EVENT,
@@ -321,19 +322,20 @@ export default function PromptInput({
                   workspaceSlug={workspaceSlug}
                   workspaceThreadSlug={threadSlug}
                 />
+                <DocxTemplateButton />
                 <SlashCommandsButton
                   showing={showSlashCommand}
                   setShowSlashCommand={setShowSlashCommand}
                 />
-                <AvailableAgentsButton
+                {/* <AvailableAgentsButton
                   showing={showAgents}
                   setShowAgents={setShowAgents}
-                />
-                <TextSizeButton />
-                <LLMSelectorAction workspaceSlug={workspaceSlug} />
+                /> */}
+                {/* <TextSizeButton />
+                <LLMSelectorAction workspaceSlug={workspaceSlug} /> */}
               </div>
               <div className="flex gap-x-2 items-center h-5">
-                <SpeechToText sendCommand={sendCommand} />
+                {/* <SpeechToText sendCommand={sendCommand} /> */}
                 {isStreaming ? (
                   <StopGenerationButton />
                 ) : (

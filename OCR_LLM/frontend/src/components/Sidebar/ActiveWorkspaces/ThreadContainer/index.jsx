@@ -158,7 +158,7 @@ export default function ThreadContainer({
           activeIdx={activeThreadIdx}
           isActive={true}
           workspace={workspace}
-          thread={{ slug: null, name: "*New Thread", virtual: true }}
+          thread={{ slug: null, name: "*Hội thoại mới", virtual: true }}
           hasNext={false}
         />
       )}
@@ -211,11 +211,11 @@ function NewThreadButton({ workspace }) {
 
         {loading ? (
           <p className="text-left text-white light:text-theme-text-primary text-sm">
-            Starting Thread...
+            Đang tạo hội thoại…
           </p>
         ) : (
           <p className="text-left text-white light:text-theme-text-primary text-sm font-semibold">
-            New Thread
+            Hội thoại mới
           </p>
         )}
       </div>

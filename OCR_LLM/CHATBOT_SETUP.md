@@ -2,6 +2,8 @@
 
 Theo cách setup gốc của project: chatbot chạy tại **http://localhost:3002**, cần **3 tiến trình** (Server 4101, Collector 8888, Frontend 3002).
 
+**Lưu ý:** Mọi cài đặt (yarn/npm) cho chatbot phải chạy **trong thư mục OCR_LLM** (hoặc qua `npm run chatbot:setup` từ gốc).
+
 ## 1. Cài đặt lần đầu
 
 Từ **thư mục gốc** dự án (`pdf-processing-ui`):
@@ -27,7 +29,7 @@ VITE_API_BASE=http://localhost:4101/api
 
 ## 2. Cách mở chatbot (đã cài xong)
 
-**Cách “giống code gốc” – 1 cửa sổ (Server + Collector + Frontend cùng terminal):**
+**Cách "giống code gốc" – 1 cửa sổ (Server + Collector + Frontend cùng terminal):**
 
 Code gốc AnythingLLM dùng `yarn dev:all` (cả 3 tiến trình trong một terminal), nên Collector luôn chạy và kéo thả file luôn bật. Trong project này có thể chạy tương tự:
 

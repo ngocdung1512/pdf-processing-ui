@@ -37,7 +37,7 @@ module.exports.SqlAgentListDatabase = {
             );
 
             const connections = (await listSQLConnections()).map((conn) => {
-              const { connectionString: _connectionString, ...rest } = conn;
+              const { connectionString, ...rest } = conn;
               return rest;
             });
             return JSON.stringify(connections);

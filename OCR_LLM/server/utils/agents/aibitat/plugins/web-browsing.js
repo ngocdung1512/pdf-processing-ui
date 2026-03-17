@@ -66,6 +66,9 @@ const webBrowsing = {
                 ?.value ?? "unknown";
             let engine;
             switch (provider) {
+              case "google-search-engine":
+                engine = "_googleSearchEngine";
+                break;
               case "serpapi":
                 engine = "_serpApi";
                 break;
@@ -94,7 +97,7 @@ const webBrowsing = {
                 engine = "_exaSearch";
                 break;
               default:
-                engine = "_duckDuckGoEngine";
+                engine = "_googleSearchEngine";
             }
             return await this[engine](query);
           },
@@ -109,6 +112,65 @@ const webBrowsing = {
           middleTruncate(str, length = 5) {
             if (str.length <= length) return str;
             return `${str.slice(0, length)}...${str.slice(-length)}`;
+          },
+
+          /**
+           * Use Google Custom Search Engines
+           * Free to set up, easy to use, 100 calls/day
+           * https://programmablesearchengine.google.com/controlpanel/create
+           */
+          _googleSearchEngine: async function (query) {
+            if (!process.env.AGENT_GSE_CTX || !process.env.AGENT_GSE_KEY) {
+              this.super.introspect(
+                `${this.caller}: I can't use Google searching because the user has not defined the required API keys.\nVisit: https://programmablesearchengine.google.com/controlpanel/create to create the API keys.`
+              );
+              return `Search is disabled and no content was found. This functionality is disabled because the user has not set it up yet.`;
+            }
+
+            const searchURL = new URL(
+              "https://www.googleapis.com/customsearch/v1"
+            );
+            searchURL.searchParams.append("key", process.env.AGENT_GSE_KEY);
+            searchURL.searchParams.append("cx", process.env.AGENT_GSE_CTX);
+            searchURL.searchParams.append("q", query);
+
+            this.super.introspect(
+              `${this.caller}: Searching on Google for "${
+                query.length > 100 ? `${query.slice(0, 100)}...` : query
+              }"`
+            );
+            const data = await fetch(searchURL)
+              .then((res) => {
+                if (res.ok) return res.json();
+                throw new Error(
+                  `${res.status} - ${res.statusText}. params: ${JSON.stringify({ key: this.middleTruncate(process.env.AGENT_GSE_KEY, 5), cx: this.middleTruncate(process.env.AGENT_GSE_CTX, 5), q: query })}`
+                );
+              })
+              .then((searchResult) => searchResult?.items || [])
+              .then((items) => {
+                return items.map((item) => {
+                  return {
+                    title: item.title,
+                    link: item.link,
+                    snippet: item.snippet,
+                  };
+                });
+              })
+              .catch((e) => {
+                this.super.handlerProps.log(
+                  `${this.name}: Google Search Error: ${e.message}`
+                );
+                return [];
+              });
+
+            if (data.length === 0)
+              return `No information was found online for the search query.`;
+
+            const result = JSON.stringify(data);
+            this.super.introspect(
+              `${this.caller}: I found ${data.length} results - reviewing the results now. (~${this.countTokens(result)} tokens)`
+            );
+            return result;
           },
 
           /**
@@ -196,7 +258,6 @@ const webBrowsing = {
                     extensions,
                   });
                 });
-                break;
               case "google_maps":
                 response.local_results?.slice(0, 10).forEach((searchResult) => {
                   const {
@@ -218,7 +279,6 @@ const webBrowsing = {
                     extensions,
                   });
                 });
-                break;
               case "google_images_light":
                 response.images_results
                   ?.slice(0, 10)
@@ -231,7 +291,6 @@ const webBrowsing = {
                       thumbnail,
                     });
                   });
-                break;
               case "google_shopping_light":
                 response.shopping_results
                   ?.slice(0, 10)
@@ -257,7 +316,6 @@ const webBrowsing = {
                       product_link,
                     });
                   });
-                break;
               case "google_news_light":
                 response.news_results?.slice(0, 10).forEach((searchResult) => {
                   const { title, link, source, thumbnail, snippet, date } =
@@ -271,7 +329,6 @@ const webBrowsing = {
                     date,
                   });
                 });
-                break;
               case "google_jobs":
                 response.jobs_results?.forEach((searchResult) => {
                   const {
@@ -291,7 +348,6 @@ const webBrowsing = {
                     extensions,
                   });
                 });
-                break;
               case "google_patents":
                 response.organic_results?.forEach((searchResult) => {
                   const {
@@ -311,7 +367,6 @@ const webBrowsing = {
                     publication_number,
                   });
                 });
-                break;
               case "google_scholar":
                 response.organic_results?.forEach((searchResult) => {
                   const { title, link, snippet, publication_info } =
@@ -323,7 +378,6 @@ const webBrowsing = {
                     publication_info,
                   });
                 });
-                break;
               case "baidu":
                 if (response.hasOwnProperty("answer_box"))
                   data.push(response.answer_box);
@@ -335,7 +389,6 @@ const webBrowsing = {
                     snippet,
                   });
                 });
-                break;
               case "amazon":
                 response.organic_results
                   ?.slice(0, 10)
@@ -569,7 +622,6 @@ const webBrowsing = {
             query,
             language = "en",
             hl = "us",
-            //eslint-disable-next-line
             limit = 100,
             device_type = "desktop",
             proxy_location = "US"

@@ -266,7 +266,7 @@ class DrupalWiki {
    * @returns {string}
    * @private
    */
-  #processPageBody({ body, title }) {
+  #processPageBody({ body, url, title, lastModified }) {
     const textContent = body.trim() !== "" ? body : title;
 
     const plainTextContent = htmlToText(textContent, {

@@ -103,12 +103,6 @@ const TRANSLATIONS = {
     branding: "Personnalisation",
     chat: "Chat",
     "mobile-app": "AnythingLLM Mobile",
-    "community-hub": {
-      title: "Centre communautaire",
-      trending: "Découvrez les tendances",
-      "your-account": "Votre compte",
-      "import-item": "Importer",
-    },
   },
   login: {
     "multi-user": {
@@ -328,16 +322,11 @@ const TRANSLATIONS = {
       },
       web: {
         title: "Recherche web en direct et navigation",
-        description:
-          "Permettez à votre agent de rechercher sur le web pour répondre à vos questions en vous connectant à un fournisseur de recherche web (SERP).",
+        "desc-start":
+          "Permettez à votre agent de rechercher sur le web pour répondre à vos questions en se connectant à un fournisseur de recherche web (SERP).",
+        "desc-end":
+          "La recherche web pendant les sessions d'agent ne fonctionnera pas tant que cela ne sera pas configuré.",
       },
-      sql: {
-        title: "Connecteur SQL",
-        description:
-          "Permettez à votre agent d'utiliser SQL pour répondre à vos questions en lui fournissant un accès à divers fournisseurs de bases de données SQL.",
-      },
-      default_skill:
-        "Par défaut, cette fonctionnalité est activée, mais vous pouvez la désactiver si vous ne souhaitez pas qu'elle soit disponible pour l'agent.",
     },
   },
   recorded: {

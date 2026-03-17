@@ -1,11 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  Info,
-  CaretDown,
-  CaretUp,
-  CircleNotch,
-  Warning,
-} from "@phosphor-icons/react";
+import { Info, CaretDown, CaretUp, CircleNotch } from "@phosphor-icons/react";
 import paths from "@/utils/paths";
 import System from "@/models/system";
 import { LMSTUDIO_COMMON_URLS } from "@/utils/constants";
@@ -255,49 +249,18 @@ function LMStudioModelSelection({ settings, basePath = null, apiKey = null }) {
   if (loading || customModels.length === 0) {
     return (
       <div className="flex flex-col w-60">
-        <div className="flex items-center mb-2 gap-x-1">
-          <label className="text-white text-sm font-semibold">
-            Selected Model
-          </label>
-          {!loading && !!basePath && (
-            <>
-              <Warning
-                size={18}
-                className="text-red-400 cursor-pointer"
-                data-tooltip-id="lmstudio-selected-model"
-              />
-              <Tooltip
-                id="lmstudio-selected-model"
-                place="top"
-                delayShow={300}
-                delayHide={400}
-                clickable={true}
-                className="tooltip !text-xs !opacity-100 z-99"
-                style={{
-                  maxWidth: "250px",
-                  whiteSpace: "normal",
-                  wordWrap: "break-word",
-                }}
-              >
-                <p className="text-xs leading-[18px] font-base">
-                  Could not reach LM Studio. Verify the URL is correct and the
-                  LMStudio server is running and accessible.
-                </p>
-              </Tooltip>
-            </>
-          )}
-        </div>
+        <label className="text-white text-sm font-semibold block mb-2">
+          LM Studio Model
+        </label>
         <select
           name="LMStudioModelPref"
           disabled={true}
           className="border-none bg-theme-settings-input-bg border-gray-500 text-white text-sm rounded-lg block w-full p-2.5"
         >
           <option disabled={true} selected={true}>
-            {loading
+            {!!basePath
               ? "--loading available models--"
-              : !!basePath
-                ? "No models found"
-                : "Enter LM Studio URL first"}
+              : "Enter LM Studio URL first"}
           </option>
         </select>
       </div>
@@ -307,7 +270,7 @@ function LMStudioModelSelection({ settings, basePath = null, apiKey = null }) {
   return (
     <div className="flex flex-col w-60">
       <label className="text-white text-sm font-semibold block mb-2">
-        Selected Model
+        LM Studio Model
       </label>
       <select
         name="LMStudioModelPref"

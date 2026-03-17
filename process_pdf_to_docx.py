@@ -9,11 +9,10 @@ from pathlib import Path
 from docx import Document
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
-from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from test_yolo_detect_pdf import (
+from yolo_detect import (
     pdf_to_images, detect_bboxes, 
     crop_bbox
 )
@@ -26,11 +25,6 @@ from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 import markdown
 from htmldocx import HtmlToDocx
-
-
-def pixels_to_cm(pixels: float, dpi: int = 200) -> float:
-    """Convert pixels to centimeters"""
-    return (pixels / dpi) * 2.54
 
 
 def determine_alignment_by_position(bbox: dict, page_width: float, page_height: float = None):
@@ -63,329 +57,6 @@ def determine_alignment_by_position(bbox: dict, page_width: float, page_height: 
         return WD_ALIGN_PARAGRAPH.LEFT
 
 
-def add_header_table(doc: Document, header: dict):
-    """
-    Tạo header giống PDF bằng table vô hình (2 hàng x 2 cột):
-    Hàng 1: [CHÍNH PHỦ] [CỘNG HÒA... + Độc lập...]
-    Hàng 2: [Số: ...]   [Hà Nội, ngày...]
-    
-    CHỈ tạo header table khi thực sự có các phần tử header được phát hiện.
-    Không hard-code fallback values - nếu không có thì không tạo.
-    """
-    if not header:
-        return
-    
-    # Chỉ tạo header table nếu có ít nhất một trong các phần tử sau:
-    # - chinh_phu (hoặc so_ky_hieu)
-    # - quoc_hieu (hoặc tieu_ngu)
-    # Nếu không có các phần tử này, không tạo header table (để các phần tử được xử lý như content bình thường)
-    has_left_column = bool(header.get("chinh_phu") or header.get("so_ky_hieu"))
-    has_right_column = bool(header.get("quoc_hieu") or header.get("tieu_ngu"))
-    
-    if not (has_left_column or has_right_column):
-        # Không có phần tử header nào được phát hiện, không tạo header table
-        return
-
-    table = doc.add_table(rows=2, cols=2)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    # Cố định độ rộng cột để quốc hiệu không bị xuống dòng
-    try:
-        table.autofit = False
-        col_left_width = Cm(5)
-        col_right_width = Cm(11)
-        table.columns[0].width = col_left_width
-        table.columns[1].width = col_right_width
-        for cell in table.columns[0].cells:
-            cell.width = col_left_width
-        for cell in table.columns[1].cells:
-            cell.width = col_right_width
-    except Exception:
-        # Nếu python-docx thay đổi API thì bỏ qua, vẫn dùng layout mặc định
-        pass
-
-    # Xóa border của table để trông như text bình thường
-    tbl = table._tbl
-    tblPr = tbl.tblPr
-    # Lấy hoặc tạo node <w:tblBorders>
-    tblBorders = tblPr.find(qn("w:tblBorders"))
-    if tblBorders is None:
-        tblBorders = OxmlElement("w:tblBorders")
-        tblPr.append(tblBorders)
-    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
-        el = tblBorders.find(qn(f"w:{edge}"))
-        if el is None:
-            el = OxmlElement(f"w:{edge}")
-            tblBorders.append(el)
-        el.set(qn("w:val"), "nil")
-
-    # Hàng 1 - ô trái: CHÍNH PHỦ (chỉ hiển thị nếu có)
-    cell_cp = table.cell(0, 0)
-    para_cp = cell_cp.paragraphs[0]
-    para_cp.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    chinh_phu_text = (header.get("chinh_phu") or "").strip()
-    if chinh_phu_text:
-        run_cp = para_cp.add_run(chinh_phu_text)
-        run_cp.font.name = "Times New Roman"
-        run_cp._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
-        run_cp.font.size = Pt(13)
-        run_cp.font.bold = True
-        run_cp.font.underline = True
-    para_cp.paragraph_format.space_after = Pt(0)
-
-    # Hàng 1 - ô phải: CỘNG HÒA... (dòng 1) + Độc lập... (dòng 2, có gạch chân) trong CÙNG 1 paragraph
-    # CHỈ hiển thị nếu thực sự có trong header dict
-    cell_quoc = table.cell(0, 1)
-    para_quoc = cell_quoc.paragraphs[0]
-    para_quoc.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    quoc_hieu_text = (header.get("quoc_hieu") or "").strip()
-    if quoc_hieu_text:
-        # Nếu OCR gộp luôn cả "Độc lập - Tự do - Hạnh phúc" vào cùng bbox,
-        # tách phần tiêu ngữ ra khỏi quốc hiệu để tránh lặp.
-        q_lower = quoc_hieu_text.lower()
-        if "độc lập" in q_lower and "tự do" in q_lower:
-            idx = q_lower.index("độc lập")
-            quoc_hieu_text = quoc_hieu_text[:idx].strip(" -\n\r\t")
-        # Nếu vẫn còn nhiều dòng, chỉ lấy dòng đầu tiên
-        if "\n" in quoc_hieu_text:
-            quoc_hieu_text = quoc_hieu_text.splitlines()[0].strip()
-        if quoc_hieu_text:
-            run_quoc = para_quoc.add_run(quoc_hieu_text)
-            run_quoc.font.name = "Times New Roman"
-            run_quoc._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
-            run_quoc.font.size = Pt(13)
-            run_quoc.font.bold = True
-
-    # Xuống dòng trong cùng paragraph cho tiêu ngữ (chỉ nếu có quốc hiệu hoặc tiêu ngữ)
-    tieu_ngu_text = (header.get("tieu_ngu") or "").strip()
-    if tieu_ngu_text:
-        if quoc_hieu_text:
-            run_quoc.add_break()
-        run_tn = para_quoc.add_run(tieu_ngu_text)
-        run_tn.font.name = "Times New Roman"
-        run_tn._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
-        run_tn.font.size = Pt(13)
-        run_tn.font.bold = True
-        run_tn.font.underline = True
-    para_quoc.paragraph_format.space_after = Pt(0)
-
-    # Hàng 2 - ô trái: Số: ...
-    cell_so = table.cell(1, 0)
-    para_so = cell_so.paragraphs[0]
-    para_so.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    so_text = (header.get("so_ky_hieu") or "").strip()
-    if so_text:
-        run_so = para_so.add_run(so_text)
-        run_so.font.name = "Times New Roman"
-        run_so._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
-        run_so.font.size = Pt(13)
-        run_so.font.bold = False
-    para_so.paragraph_format.space_after = Pt(0)
-
-    # Hàng 2 - ô phải: Hà Nội, ngày...
-    cell_dia = table.cell(1, 1)
-    para_dia = cell_dia.paragraphs[0]
-    para_dia.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    dia_text = (header.get("dia_danh_ngay") or "").strip()
-    if dia_text:
-        run_dia = para_dia.add_run(dia_text)
-        run_dia.font.name = "Times New Roman"
-        run_dia._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
-        run_dia.font.size = Pt(13)
-        run_dia.font.italic = True
-        run_dia.font.bold = False
-    para_dia.paragraph_format.space_after = Pt(0)
-
-
-def add_text_to_doc(doc: Document, bbox: dict, page_width: float, last_y: float = None, is_first_in_page: bool = False, page_height: float = None, quoc_hieu_info: dict = None, is_same_row: bool = False):
-    """Add text to document with proper formatting - phân tích bố cục như con người"""
-    text = bbox['text'].strip()
-    if not text:
-        return bbox['y2']
-    
-    bbox_class = bbox['class']
-    x1 = bbox['x1']
-    y1 = bbox['y1']
-    y2 = bbox['y2']
-    center_x = bbox['center_x']
-    
-    # Phân tích vị trí để xác định alignment (như con người nhìn)
-    if page_height is None:
-        page_height = 3000  # Default estimate
-    
-    # Xác định alignment dựa trên vị trí
-    alignment = determine_alignment_by_position(bbox, page_width, page_height)
-    
-    # Detect header elements for first page (kết hợp với vị trí)
-    text_lower = text.lower().strip()
-    is_in_header_zone = y1 < page_height * 0.20  # Top 20% của trang (increased for better header detection)
-    is_chinh_phu = 'chính phủ' in text_lower and len(text_lower) < 20
-    is_so_ky_hieu = text_lower.startswith('số:') or text_lower.startswith('số ') or ('số:' in text_lower and '/' in text_lower and 'nđ-cp' in text_lower)
-    is_quoc_hieu = 'cộng hòa' in text_lower and 'việt nam' in text_lower
-    # Tiêu ngữ: bắt rộng hơn để tránh sót (độc / tự do / hạnh phúc)
-    is_tieu_ngu = (
-        ('độc lập' in text_lower and 'tự do' in text_lower)
-        or ('độc' in text_lower and 'hạnh phúc' in text_lower)
-    )
-    is_dia_danh_ngay = ('hà nội' in text_lower or 'hà nội' in text) and 'ngày' in text_lower and 'tháng' in text_lower
-    is_nghi_dinh = text_lower == 'nghị định' or (text_lower.startswith('nghị định') and len(text_lower) < 15)
-    is_can_cu = text_lower.startswith('căn cứ') or text_lower.startswith('căn cứ luật') or text_lower.startswith('căn cứ nghị quyết')
-    is_theo_de_nghi = text_lower.startswith('theo đề nghị')
-    
-    # Tiêu ngữ "Độc lập - Tự do - Hạnh phúc" đã được dựng bằng header table,
-    # nên bỏ qua mọi bbox tiêu ngữ để tránh lặp lại lần nữa.
-    if is_tieu_ngu:
-        return last_y if last_y is not None else y2
-    
-    # Create paragraph
-    para = doc.add_paragraph()
-    
-    # Override alignment nếu là header elements (ưu tiên vị trí thực tế)
-    if is_chinh_phu or is_so_ky_hieu:
-        # "CHÍNH PHỦ" và "Số: ...": luôn căn trái (header zone left column)
-        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    elif is_tieu_ngu:
-        # "Độc lập - Tự do - Hạnh phúc": căn giữa dưới "CỘNG HÒA..." trong block bên phải
-        if quoc_hieu_info:
-            # Tính toán left và right indent để tạo container căn giữa dưới "CỘNG HÒA..."
-            quoc_hieu_x1 = quoc_hieu_info['x1']
-            quoc_hieu_x2 = quoc_hieu_info['x2']
-            
-            # Convert pixels to cm
-            # Page có left margin 3.0cm, right margin 2.0cm
-            # Content area: từ 3.0cm đến (page_width_cm - 2.0cm)
-            page_width_cm = pixels_to_cm(page_width)
-            quoc_hieu_x1_cm = pixels_to_cm(quoc_hieu_x1)
-            quoc_hieu_x2_cm = pixels_to_cm(quoc_hieu_x2)
-            
-            # Tính left indent: từ lề trái content (3.0cm) đến đầu "CỘNG HÒA..."
-            left_indent = max(0, quoc_hieu_x1_cm - 3.0)
-            # Tính right indent: từ cuối "CỘNG HÒA..." đến lề phải content
-            right_indent = max(0, (page_width_cm - quoc_hieu_x2_cm) - 2.0)
-            
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            if left_indent > 0:
-                para.paragraph_format.left_indent = Cm(left_indent)
-            if right_indent > 0:
-                para.paragraph_format.right_indent = Cm(right_indent)
-        else:
-            # Fallback: center-aligned nếu không có thông tin "CỘNG HÒA..."
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    elif is_quoc_hieu or is_dia_danh_ngay:
-        # "CỘNG HÒA..." và "Hà Nội, ngày...": luôn căn phải (header zone right column)
-        para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    elif is_nghi_dinh:
-        # "NGHỊ ĐỊNH": luôn căn giữa
-        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    elif is_in_header_zone:
-        # Trong header zone nhưng không phải các element đặc biệt, dùng alignment từ vị trí
-        para.alignment = alignment
-    elif bbox_class in ['title']:
-        # Tiêu đề: căn giữa
-        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    else:
-        # Nội dung chính: dùng alignment từ vị trí
-        para.alignment = alignment
-    
-    # Set left indent (không áp dụng cho header elements và centered text)
-    if para.alignment == WD_ALIGN_PARAGRAPH.LEFT and not is_in_header_zone:
-        left_margin_px = x1
-        left_margin_cm = pixels_to_cm(left_margin_px)
-        relative_indent = max(0, left_margin_cm - 3.0)
-        if relative_indent > 0:
-            para.paragraph_format.left_indent = Cm(relative_indent)
-    
-    # Format based on class
-    run = para.add_run(text)
-    run.font.name = 'Times New Roman'
-    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Times New Roman')
-    
-    # Set line spacing to 1.0 for all paragraphs to avoid default spacing
-    para.paragraph_format.line_spacing = 1.0
-    
-    # Format based on class and content type
-    # IMPORTANT: Check header elements FIRST before checking bbox_class
-    # This ensures header elements get correct formatting even if YOLO detects them as 'title'
-    if is_chinh_phu:
-        # "CHÍNH PHỦ": bold, size 13, underlined
-        run.font.size = Pt(13)
-        run.font.bold = True
-        run.font.underline = True
-        para.paragraph_format.space_after = Pt(3)
-    elif is_quoc_hieu:
-        # Quốc hiệu: bold, size 13
-        run.font.size = Pt(13)
-        run.font.bold = True
-        para.paragraph_format.space_after = Pt(6)
-    elif is_tieu_ngu:
-        # Tiêu ngữ: bold, size 13, underlined
-        run.font.size = Pt(13)
-        run.font.bold = True
-        run.font.underline = True
-        para.paragraph_format.space_after = Pt(6)
-    elif is_nghi_dinh:
-        # "NGHỊ ĐỊNH": bold, size 18, centered, underlined
-        run.font.size = Pt(18)
-        run.font.bold = True
-        run.font.underline = True
-        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para.paragraph_format.space_after = Pt(12)
-    elif bbox_class in ['title'] and not is_in_header_zone:
-        # Only apply title formatting if NOT in header zone (header elements already handled above)
-        run.font.size = Pt(18)
-        run.font.bold = True
-        para.paragraph_format.space_after = Pt(12)
-    elif is_so_ky_hieu:
-        # "Số: ...": không bold, size 13
-        run.font.size = Pt(13)
-        run.font.bold = False
-        para.paragraph_format.space_after = Pt(3)
-    elif is_dia_danh_ngay:
-        # "Hà Nội, ngày...": không bold, size 13, italic
-        run.font.size = Pt(13)
-        run.font.bold = False
-        run.font.italic = True
-        para.paragraph_format.space_after = Pt(3)
-    elif is_can_cu or is_theo_de_nghi:
-        # "Căn cứ..." và "Theo đề nghị...": italic, size 13
-        run.font.size = Pt(13)
-        run.font.bold = False
-        run.font.italic = True
-        para.paragraph_format.space_after = Pt(0)
-    elif bbox_class in ['heading1', 'heading2']:
-        run.font.size = Pt(14)
-        run.font.bold = True
-        para.paragraph_format.space_after = Pt(6)
-    else:
-        run.font.size = Pt(13)  # Changed from 12 to 13
-        run.font.bold = False
-        para.paragraph_format.space_after = Pt(0)
-    
-    # Set spacing - IMPORTANT: first paragraph of new page should have NO space_before
-    # Also, elements on the same row should have NO space_before
-    if is_first_in_page or is_same_row:
-        para.paragraph_format.space_before = Pt(0)
-    elif last_y is not None:
-        vertical_gap = y1 - last_y
-        gap_cm = pixels_to_cm(vertical_gap)
-        
-        # If gap is very small (< 0.1cm), consider it same row
-        if gap_cm < 0.1:
-            para.paragraph_format.space_before = Pt(0)
-        elif gap_cm > 0.5:
-            para.paragraph_format.space_before = Pt(12)
-        elif gap_cm > 0.2:
-            para.paragraph_format.space_before = Pt(6)
-        elif gap_cm > 0.1:
-            para.paragraph_format.space_before = Pt(3)
-        else:
-            para.paragraph_format.space_before = Pt(0)
-    else:
-        # If last_y is None and not first in page, set to 0
-        para.paragraph_format.space_before = Pt(0)
-    
-    return y2
-
-
 def sort_bboxes_by_position(bboxes, page_width=None):
     """Sort bboxes by reading order - improved header handling for multi-column layout"""
     if not bboxes:
@@ -405,124 +76,53 @@ def sort_bboxes_by_position(bboxes, page_width=None):
     else:
         median_height = 30  # Default fallback
     
-    # Identify header zone (top 20% of page)
-    header_zone_threshold = page_height * 0.20
-    
-    # Separate header bboxes from body bboxes
-    header_bboxes = [b for b in bboxes if b['y1'] < header_zone_threshold]
-    body_bboxes = [b for b in bboxes if b['y1'] >= header_zone_threshold]
-    
-    # For header zone: use smaller tolerance based on median height
-    header_y_tolerance = max(median_height * 0.5, 20)  # Half of median height, min 20px
-    # For body: use median height as tolerance (same row if within one line height)
-    body_y_tolerance = max(median_height * 0.8, 25)  # 80% of median height, min 25px
-    
-    def sort_header_bboxes(header_bboxes):
-        """Sort header bboxes: process left column first, then right column, then center"""
-        if not header_bboxes:
-            return []
-        
-        # First, sort by Y (row)
-        sorted_by_y = sorted(header_bboxes, key=lambda b: (b['y1'], b['center_y']))
-        
-        # Group into strips (same row)
-        strips = []
-        current_strip = []
-        last_y = None
-        
-        for bbox in sorted_by_y:
-            if last_y is None or abs(bbox['y1'] - last_y) <= header_y_tolerance:
-                current_strip.append(bbox)
-            else:
-                if current_strip:
-                    def header_sort_key(b):
-                        center_x = b['center_x']
-                        left_threshold = page_width * 0.40
-                        right_threshold = page_width * 0.60
-                        
-                        if center_x < left_threshold:
-                            zone = 0
-                        elif center_x > right_threshold:
-                            zone = 2
-                        else:
-                            zone = 1
-                        
-                        return (zone, b['x1'], b['center_x'])
-                    
-                    current_strip.sort(key=header_sort_key)
-                    strips.append(current_strip)
-                current_strip = [bbox]
-            last_y = bbox['y1']
-        
-        # Handle last strip
-        if current_strip:
-            def header_sort_key(b):
-                center_x = b['center_x']
-                left_threshold = page_width * 0.40
-                right_threshold = page_width * 0.60
-                
-                if center_x < left_threshold:
-                    zone = 0
-                elif center_x > right_threshold:
-                    zone = 2
-                else:
-                    zone = 1
-                
-                return (zone, b['x1'], b['center_x'])
-            
-            current_strip.sort(key=header_sort_key)
-            strips.append(current_strip)
-        
-        # Flatten strips
-        result = []
-        for strip in strips:
-            result.extend(strip)
-        
-        return result
-    
     def sort_body_bboxes(body_bboxes):
         """
         Sort body bboxes: simple top-to-bottom, left-to-right (natural reading order)
         No priority system - just sort by Y position, then X position within each row
+
+        FIX: Sort by center_y (not y1) so that a tall multi-line bbox whose y1 happens
+        to sit slightly above a shorter single-line bbox is still placed AFTER it in the
+        reading order.  Using y1 as the primary key caused, e.g., a 2-line paragraph
+        starting at y1=550 to sort before a 1-line heading at y1=560 even though the
+        paragraph is visually lower on the page (its center_y=585 > heading center_y=575).
         """
         if not body_bboxes:
             return []
         
-        # Step 1: Sort all bboxes by Y position (top to bottom), then X (left to right)
-        # This ensures natural reading order: top-to-bottom, left-to-right
-        sorted_by_y = sorted(body_bboxes, key=lambda b: (b['y1'], b['center_y'], b['x1']))
+        # Step 1: Sort all bboxes by center_y (vertical midpoint) then x1.
+        # center_y is more robust than y1 for bboxes of varying heights because it
+        # represents the visual "middle" of each element rather than its top edge.
+        sorted_by_y = sorted(body_bboxes, key=lambda b: (b['center_y'], b['x1']))
         
-        # Step 2: Group into strips (same row) based on Y tolerance
+        # Step 2: Group into strips (same row) based on center_y tolerance
         # Use stricter tolerance to avoid grouping different rows together
         strips = []
         current_strip = []
-        last_y = None
+        last_center_y = None  # Track strip reference by center_y, NOT y1
         
         for bbox in sorted_by_y:
-            bbox_y1 = bbox['y1']
-            bbox_height = bbox.get('y2', bbox_y1) - bbox_y1
+            bbox_center_y = bbox['center_y']
+            bbox_height = bbox.get('y2', bbox['y1']) - bbox['y1']
             
-            if last_y is None:
+            if last_center_y is None:
                 # First bbox
                 current_strip.append(bbox)
-                last_y = bbox_y1
+                last_center_y = bbox_center_y
             else:
-                # Calculate Y difference
-                y_diff = abs(bbox_y1 - last_y)
+                # Calculate center_y difference
+                y_diff = abs(bbox_center_y - last_center_y)
                 
                 # Use MUCH stricter tolerance: max(median_height * 0.3, 10px)
-                # Chỉ nhóm vào cùng dòng nếu Y difference rất nhỏ (< 30% của median height)
-                # Điều này đảm bảo các bboxes ở các dòng khác nhau không bị nhóm lại
+                # Chỉ nhóm vào cùng dòng nếu center_y difference rất nhỏ (< 30% of median height)
                 strict_tolerance = max(median_height * 0.3, 10)
                 
-                # Chỉ nhóm vào cùng dòng nếu:
-                # 1. Y difference <= strict_tolerance (rất nhỏ)
-                # 2. Y difference < bbox_height (nhỏ hơn chiều cao của bbox)
-                if y_diff <= strict_tolerance and y_diff < bbox_height:
+                if y_diff <= strict_tolerance:
                     # Same row (within very strict tolerance) - add to current strip
                     current_strip.append(bbox)
-                    # Keep the topmost Y for the strip
-                    last_y = min(last_y, bbox_y1)
+                    # Update reference to average center of current strip
+                    # (do NOT use min/max which can drift the reference)
+                    last_center_y = sum(b['center_y'] for b in current_strip) / len(current_strip)
                 else:
                     # New row - finalize current strip
                     if current_strip:
@@ -531,7 +131,7 @@ def sort_bboxes_by_position(bboxes, page_width=None):
                         strips.append(current_strip)
                     # Start new strip
                     current_strip = [bbox]
-                    last_y = bbox_y1
+                    last_center_y = bbox_center_y
         
         # Handle last strip
         if current_strip:
@@ -545,12 +145,8 @@ def sort_bboxes_by_position(bboxes, page_width=None):
         
         return result
     
-    # Sort header and body separately
-    sorted_header = sort_header_bboxes(header_bboxes)
-    sorted_body = sort_body_bboxes(body_bboxes)
-    
-    # Combine: header first, then body
-    return sorted_header + sorted_body
+    # Sort tất cả bboxes theo center_y (top-to-bottom, left-to-right)
+    return sort_body_bboxes(bboxes)
 
 
 def process_pdf_to_docx(
@@ -926,114 +522,34 @@ def process_pdf_to_docx(
             
             if not text or text in ['[No text detected]', '[Empty bbox]'] or text.startswith('[OCR Error:'):
                 continue
-            
-            # Check if this is a document number - never skip these
-            text_lower = text.lower().strip()
-            is_doc_number = text_lower.startswith('số:') or text_lower.startswith('số ') or ('số:' in text_lower and '/' in text_lower and ('nđ-cp' in text_lower or 'nd-cp' in text_lower))
-            
-            # Check for duplicates - improved logic
+
+            # Generic duplicate detection by position overlap or proximity
             text_normalized = text.lower().strip()
-            
-            # Normalize text for comparison (remove diacritics for "chính phủ" detection)
-            def normalize_for_comparison(text):
-                """Normalize text for comparison, handling both with/without diacritics"""
-                # Remove diacritics for comparison
-                import unicodedata
-                text_no_diacritics = ''.join(c for c in unicodedata.normalize('NFD', text) 
-                                           if unicodedata.category(c) != 'Mn')
-                return text_no_diacritics.lower().strip()
-            
-            text_normalized_no_diacritics = normalize_for_comparison(text)
-            
-            # Special handling for header elements - only keep one instance
-            is_chinh_phu = (text_normalized == 'chính phủ' or 
-                           text_normalized_no_diacritics == 'chinh phu' or
-                           text_normalized == 'chinh phu')
-            is_quoc_hieu = ('cộng hòa' in text_normalized and 'việt nam' in text_normalized)
-            is_tieu_ngu = ('độc lập' in text_normalized and 'tự do' in text_normalized)
-            is_nghi_dinh = (text_normalized == 'nghị định')
-            
-            is_header_element = is_chinh_phu or is_quoc_hieu or is_tieu_ngu or is_nghi_dinh
-            
-            # Check for "CHÍNH PHỦ" duplicates (handle both with/without diacritics)
-            should_skip_chinh_phu = False
-            if is_chinh_phu:
-                # Check if we already have a "CHÍNH PHỦ" (with or without diacritics)
-                for existing_text, existing_data in list(seen_texts_positions.items()):
-                    existing_normalized = normalize_for_comparison(existing_text)
-                    # If it's also "chinh phu" (with or without diacritics)
-                    if existing_normalized == 'chinh phu':
-                        existing_coords = existing_data['coords']
-                        existing_x1, existing_y1, existing_x2, existing_y2 = existing_coords
-                        
-                        # Check if they're in similar position (header zone, left side)
-                        center_x = (x1 + x2) / 2
-                        center_y = (y1 + y2) / 2
-                        existing_center_x = (existing_x1 + existing_x2) / 2
-                        existing_center_y = (existing_y1 + existing_y2) / 2
-                        distance = ((center_x - existing_center_x) ** 2 + (center_y - existing_center_y) ** 2) ** 0.5
-                        
-                        # If very close (<100px) in header zone, it's a duplicate
-                        if distance < 100 and y1 < image.shape[0] * 0.20:
-                            # Keep the one with diacritics (CHÍNH PHỦ), skip the one without (CHINH PHU)
-                            has_diacritics = 'chính phủ' in text_normalized
-                            existing_has_diacritics = 'chính phủ' in existing_text.lower()
-                            
-                            if has_diacritics and not existing_has_diacritics:
-                                # This one has diacritics, replace the old one
-                                # Remove old bbox
-                                page_bboxes = [b for b in page_bboxes if not (
-                                    normalize_for_comparison(b['text'].lower().strip()) == 'chinh phu' and
-                                    abs(b['x1'] - existing_x1) < 50 and abs(b['y1'] - existing_y1) < 50
-                                )]
-                                # Update tracking - remove old, will add new one later
-                                seen_texts_positions.pop(existing_text, None)
-                                break
-                            else:
-                                # This one doesn't have diacritics or old one already has diacritics, skip
-                                should_skip_chinh_phu = True
-                                break
-            
-            if should_skip_chinh_phu:
-                continue
-            
-            # For other header elements, if already exists, skip (only keep first one)
-            if is_header_element and not is_chinh_phu and text_normalized in seen_texts_positions:
-                continue
-            
-            # Check if this text already exists (for non-header elements)
             if text_normalized in seen_texts_positions:
                 existing_bbox = seen_texts_positions[text_normalized]
                 existing_x1, existing_y1, existing_x2, existing_y2 = existing_bbox['coords']
-                
-                # Calculate overlap or distance
-                overlap_x = max(0, min(x2, existing_x2) - max(x1, existing_x1))
-                overlap_y = max(0, min(y2, existing_y2) - max(y1, existing_y1))
+
+                overlap_x    = max(0, min(x2, existing_x2) - max(x1, existing_x1))
+                overlap_y    = max(0, min(y2, existing_y2) - max(y1, existing_y1))
                 overlap_area = overlap_x * overlap_y
-                
-                bbox_area = width * height
+                bbox_area    = width * height
                 existing_area = (existing_x2 - existing_x1) * (existing_y2 - existing_y1)
                 overlap_ratio = overlap_area / min(bbox_area, existing_area) if min(bbox_area, existing_area) > 0 else 0
-                
-                # If significant overlap (>30%) or very close (<50px distance), it's a duplicate
+
                 center_x = (x1 + x2) / 2
                 center_y = (y1 + y2) / 2
                 existing_center_x = (existing_x1 + existing_x2) / 2
                 existing_center_y = (existing_y1 + existing_y2) / 2
                 distance = ((center_x - existing_center_x) ** 2 + (center_y - existing_center_y) ** 2) ** 0.5
-                
-                is_duplicate = overlap_ratio > 0.3 or distance < 50
-                
-                # Skip duplicates (except document numbers)
-                if is_duplicate and not is_doc_number:
+
+                if overlap_ratio > 0.3 or distance < 50:
                     continue
-            
-            # Add to tracking
+
             seen_texts_positions[text_normalized] = {
                 'coords': (x1, y1, x2, y2),
                 'score': float(score)
             }
-            
+
             x1, y1, x2, y2 = box
             page_bboxes.append({
                 'class': class_name,
@@ -1046,55 +562,8 @@ def process_pdf_to_docx(
                 'center_x': (x1 + x2) / 2,
                 'center_y': (y1 + y2) / 2,
             })
-        
-        # Merge related bboxes for "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM" if split
-        merged_bboxes = []
-        i = 0
-        while i < len(page_bboxes):
-            bbox = page_bboxes[i]
-            text_lower = bbox['text'].lower().strip()
-            
-            # Check if this is part of "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"
-            is_quoc_hieu_part = ('cộng hòa' in text_lower or 'nghĩa việt nam' in text_lower or 
-                                'xã hội' in text_lower or 'chủ nghĩa' in text_lower)
-            
-            if is_quoc_hieu_part and i < len(page_bboxes) - 1:
-                # Check if next bbox is also part of quoc hieu
-                next_bbox = page_bboxes[i + 1]
-                next_text_lower = next_bbox['text'].lower().strip()
-                is_next_quoc_hieu = ('cộng hòa' in next_text_lower or 'nghĩa việt nam' in next_text_lower or 
-                                     'xã hội' in next_text_lower or 'chủ nghĩa' in next_text_lower)
-                
-                # Check if they're on same row (similar Y position) and close horizontally
-                y_diff = abs(bbox['y1'] - next_bbox['y1'])
-                x_gap = next_bbox['x1'] - bbox['x2']
-                
-                if is_next_quoc_hieu and y_diff < 50 and x_gap < 100:
-                    # Merge them
-                    merged_text = bbox['text'].strip() + ' ' + next_bbox['text'].strip()
-                    merged_bbox = {
-                        'class': bbox['class'],
-                        'confidence': max(bbox['confidence'], next_bbox['confidence']),
-                        'text': merged_text,
-                        'x1': min(bbox['x1'], next_bbox['x1']),
-                        'y1': min(bbox['y1'], next_bbox['y1']),
-                        'x2': max(bbox['x2'], next_bbox['x2']),
-                        'y2': max(bbox['y2'], next_bbox['y2']),
-                        'center_x': (min(bbox['x1'], next_bbox['x1']) + max(bbox['x2'], next_bbox['x2'])) / 2,
-                        'center_y': (min(bbox['y1'], next_bbox['y1']) + max(bbox['y2'], next_bbox['y2'])) / 2,
-                    }
-                    merged_bboxes.append(merged_bbox)
-                    i += 2  # Skip next bbox
-                    continue
-            
-            merged_bboxes.append(bbox)
-            i += 1
-        
-        # Trích header cho trang 1 và loại bỏ khỏi danh sách content
-        # UPDATE: We now use absolute coordinates to place text exactly where it appears in YOLO detections.
-        # Header components will also be drawn exactly where they are detected.
-        header_elements = None
-        content_bboxes = merged_bboxes
+
+        content_bboxes = page_bboxes
         
         # ========================================================================
         # BƯỚC 3: SORT BBOXES THEO THỨ TỰ ĐỌC TỰ NHIÊN
@@ -1135,8 +604,8 @@ def process_pdf_to_docx(
                     text_preview = bbox['text'][:50].replace('\n', ' ')
                     print(f"      #{reading_order} (Y={bbox['y1']:.0f}, X={bbox['x1']:.0f}): {text_preview}...")
             
-            all_pages_bboxes.append((page_idx + 1, sorted_bboxes, image.shape[1], image.shape[0], header_elements))
-            print(f"    ✓ Processed {len(sorted_bboxes)} bboxes with text (merged {len(page_bboxes) - len(merged_bboxes)} related bboxes)")
+            all_pages_bboxes.append((page_idx + 1, sorted_bboxes, image.shape[1], image.shape[0]))
+            print(f"    ✓ Processed {len(sorted_bboxes)} bboxes with text")
         else:
             print(f"    ⚠️  No valid bboxes found for this page")
     
@@ -1263,8 +732,7 @@ def process_pdf_to_docx(
             xml_parts.append(etree.tostring(p._p, encoding='unicode'))
         return '\n'.join(xml_parts)
     
-    for page_num, sorted_bboxes, page_width, page_height, header_elements in all_pages_bboxes:
-        # Add page break if not first page
+    for page_num, sorted_bboxes, page_width, page_height in all_pages_bboxes:
         if page_num > 1:
             page_break_para = doc.add_paragraph()
             page_break_para.paragraph_format.space_before = Pt(0)
@@ -1418,145 +886,6 @@ def process_pdf_to_docx(
     A4_HEIGHT_PT = 842.0
     CONTENT_WIDTH_CM = 15.0  # A4 trừ lề trái 3cm + lề phải 2cm
     LEFT_MARGIN_CM = 3.0
-
-    def bbox_to_x1_cm(bbox, page_width):
-        """Tọa độ x1 của bbox quy ra cm tuyệt đối trên A4 (tính từ lề trái trang)"""
-        return (bbox['x1'] / page_width) * (A4_WIDTH_PT / 28.3465)
-
-    def bbox_to_width_cm(bbox, page_width):
-        return ((bbox['x2'] - bbox['x1']) / page_width) * (A4_WIDTH_PT / 28.3465)
-
-    def get_indent_cm(bbox, page_width):
-        """Indent tính từ lề content (3cm), không âm"""
-        return max(0.0, bbox_to_x1_cm(bbox, page_width) - LEFT_MARGIN_CM)
-
-    def bboxes_overlap_y(a, b, threshold=0.4):
-        """Kiểm tra 2 bbox có overlap Y >= threshold * min_height không"""
-        overlap = min(a['y2'], b['y2']) - max(a['y1'], b['y1'])
-        min_h = min(a['y2'] - a['y1'], b['y2'] - b['y1'])
-        return min_h > 0 and (overlap / min_h) >= threshold
-
-    def bboxes_overlap_x(a, b):
-        """Kiểm tra 2 bbox có overlap X không (nếu có → không thể song song)"""
-        return min(a['x2'], b['x2']) - max(a['x1'], b['x1']) > 10
-
-    def set_table_borders(table):
-        """Helper to clear table borders in python-docx"""
-        tbl = table._tbl
-        tblPr = tbl.tblPr
-        if tblPr is None:
-            tblPr = OxmlElement('w:tblPr')
-            tbl.insert(0, tblPr)
-        
-        tblBorders = tblPr.find(qn('w:tblBorders'))
-        if tblBorders is None:
-            tblBorders = OxmlElement('w:tblBorders')
-            tblPr.append(tblBorders)
-        
-        for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-            border = tblBorders.find(qn('w:' + border_name))
-            if border is None:
-                border = OxmlElement('w:' + border_name)
-                tblBorders.append(border)
-            border.set(qn('w:val'), 'none')
-            border.set(qn('w:sz'), '0')
-            border.set(qn('w:space'), '0')
-            border.set(qn('w:color'), 'auto')
-
-    def group_into_rows(sorted_bboxes):
-        """
-        Nhóm sorted_bboxes thành rows. Mỗi row là list of bbox.
-        Row có >1 bbox = song song (multi-column).
-        Dùng overlap Y với TẤT CẢ bbox trong row hiện tại để quyết định.
-        """
-        rows = []
-        current_row = []
-        
-        for bbox in sorted_bboxes:
-            if not bbox['text'].strip():
-                continue
-            if not current_row:
-                current_row.append(bbox)
-            else:
-                # Bbox mới có overlap Y với ít nhất 1 bbox trong row hiện tại?
-                has_y_overlap = any(bboxes_overlap_y(bbox, b) for b in current_row)
-                # Bbox mới có overlap X với bất kỳ bbox nào trong row không?
-                has_x_overlap = any(bboxes_overlap_x(bbox, b) for b in current_row)
-                
-                if has_y_overlap and not has_x_overlap:
-                    # Song song thật sự → thêm vào row
-                    current_row.append(bbox)
-                else:
-                    rows.append(current_row)
-                    current_row = [bbox]
-        
-        if current_row:
-            rows.append(current_row)
-        return rows
-
-    def render_bbox_to_paragraphs(bbox, page_width, target_doc, indent_override=None):
-        """Render 1 bbox thành list paragraph, gắn indent từ tọa độ x1"""
-        text = bbox['text'].strip()
-        if not text:
-            return
-        
-        # Convert text → HTML → paragraphs (giữ nguyên logic hiện tại)
-        if '<' in text and '>' in text and any(t in text.lower() for t in ['<p>', '<b>', '<i>', '<u>', '<ul>', '<ol>', '<li>', '<br', '<h']):
-            html_content = text
-        else:
-            html_content = markdown.markdown(text)
-        
-        html_content = re.sub(r'<img(?![^>]*src\s*=)[^>]*/?\s*>', '', html_content, flags=re.IGNORECASE)
-        html_content = re.sub(r'<(?!/?(?:p|b|i|u|s|a|br|hr|h[1-6]|ul|ol|li|table|tr|td|th|thead|tbody|div|span|strong|em|sub|sup|pre|code|blockquote)\b)[A-Z][^>]*>', '', html_content, flags=re.IGNORECASE)
-        
-        temp_doc = Document()
-        try:
-            if html_parser is not None:
-                html_parser.add_html_to_document(html_content, temp_doc)
-            else:
-                temp_doc.add_paragraph().add_run(text)
-        except Exception:
-            temp_doc = Document()
-            plain = re.sub(r'<[^>]+>', ' ', text).strip()
-            temp_doc.add_paragraph().add_run(re.sub(r'\s+', ' ', plain))
-        
-        temp_paras = [p for p in temp_doc.paragraphs if p.text.strip()]
-        if not temp_paras:
-            return
-        
-        indent_cm = indent_override if indent_override is not None else get_indent_cm(bbox, page_width)
-        
-        for tp in temp_paras:
-            import copy
-            from docx.text.paragraph import Paragraph
-            new_p = copy.deepcopy(tp._p)
-            body = target_doc._element.body
-            if body.sectPr is not None:
-                body.sectPr.addprevious(new_p)
-            else:
-                body.append(new_p)
-            cloned = Paragraph(new_p, target_doc)
-            
-            # Apply font
-            for run in cloned.runs:
-                saved = (run.font.bold, run.font.italic, run.font.underline)
-                run.font.name = 'Times New Roman'
-                run.font.size = Pt(10)
-                if run._element.rPr is not None:
-                    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Times New Roman')
-                run.font.bold, run.font.italic, run.font.underline = saved
-            
-            # Apply indent từ tọa độ x1 thật
-            if indent_cm > 0.3:
-                pPr = new_p.get_or_add_pPr()
-                ind = pPr.find(qn('w:ind'))
-                twips = int(indent_cm * 567)
-                if ind is None:
-                    ind = OxmlElement('w:ind')
-                    ind.set(qn('w:left'), str(twips))
-                    pPr.append(ind)
-                else:
-                    ind.set(qn('w:left'), str(twips))
 
     # --- STEP 8: Create clean transcript ---
     print("\n[Step 8] Creating clean transcript (indent + table approach)...")
@@ -1788,7 +1117,7 @@ def process_pdf_to_docx(
 
     # ── main loop ─────────────────────────────────────────────────────────────
 
-    for page_num, sorted_bboxes, page_width, page_height, header_elements in all_pages_bboxes:
+    for page_num, sorted_bboxes, page_width, page_height in all_pages_bboxes:
 
         # Page break
         if page_num > 1:
@@ -1797,10 +1126,6 @@ def process_pdf_to_docx(
             pb.paragraph_format.space_after  = Pt(0)
             pb.paragraph_format.line_spacing = 1.0
             pb.add_run().add_break(WD_BREAK.PAGE)
-
-        # Header table
-        if header_elements:
-            add_header_table(transcript_doc, header_elements)
 
         # Phân loại mep vs main
         margin_l    = page_width * 0.05
@@ -1970,8 +1295,7 @@ def process_pdf_to_docx(
     print(f"Main output file (transcript): {output_docx}")
     # print(f"Layout output file: {layout_docx}")
     print(f"Total pages: {len(images)}")
-    # all_pages_bboxes giờ là (page_num, sorted_bboxes, page_width, page_height, header_elements)
-    total_bboxes = sum(len(bboxes) for _, bboxes, _, _, _ in all_pages_bboxes)
+    total_bboxes = sum(len(bboxes) for _, bboxes, _, _ in all_pages_bboxes)
     print(f"Total bboxes: {total_bboxes}")
     
     return output_docx

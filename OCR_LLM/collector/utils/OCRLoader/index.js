@@ -267,7 +267,6 @@ class OCRLoader {
       this.log(`Error: ${e.message}`);
       return null;
     } finally {
-      //eslint-disable-next-line
       if (!worker) return;
       await worker.terminate();
     }
@@ -313,14 +312,60 @@ class PDFSharp {
 
           const name = ops.argsArray[i][0];
           const img = await page.objs.get(name);
+
+          // Guard: the XObject must be a decoded raster image.  Non-image
+          // XObjects (e.g. digital-signature widgets, form XObjects, clipping
+          // paths) can share the same paint opcodes but have no pixel data.
+          if (!img || !img.data || !img.data.length || !img.width || !img.height) {
+            this.log(
+              `Skipping non-raster XObject "${name}" on page ${page.pageNumber}`
+            );
+            continue;
+          }
+
           const { width, height } = img;
           const size = img.data.length;
-          const channels = size / width / height;
+          let channels = size / width / height;
+          let pixelData = img.data;
+
+          // Handle 1-bpp row-aligned bitmaps (common in scanned PDFs compressed
+          // with CCITTFaxDecode / JBIG2Decode). Rows are padded to byte boundaries:
+          // rowBytes = ceil(width / 8), so totalBytes = rowBytes * height.
+          // Unpack to 8-bit grayscale (1 channel) which Sharp can consume.
+          const rowBytes = Math.ceil(width / 8);
+          if (!Number.isInteger(channels) && size === rowBytes * height) {
+            this.log(
+              `Unpacking 1-bpp bitmap on page ${page.pageNumber} (${width}×${height}px)`
+            );
+            const unpacked = new Uint8Array(width * height);
+            for (let y = 0; y < height; y++) {
+              for (let x = 0; x < width; x++) {
+                const srcByte = pixelData[y * rowBytes + Math.floor(x / 8)];
+                const bit = (srcByte >> (7 - (x % 8))) & 1;
+                // PDF convention: 1 = black (ink), 0 = white (paper).
+                unpacked[y * width + x] = bit ? 0 : 255;
+              }
+            }
+            pixelData = unpacked;
+            channels = 1;
+          }
+
+          // Sharp's raw-pixel mode requires channels to be an integer in [1, 4].
+          // Non-integer values indicate palette, CMYK, or other formats Sharp
+          // cannot consume directly.
+          if (!Number.isInteger(channels) || channels < 1 || channels > 4) {
+            this.log(
+              `Skipping XObject "${name}" on page ${page.pageNumber}: ` +
+                `unsupported channel layout (${channels} ch, ${size} bytes, ${width}×${height}px)`
+            );
+            continue;
+          }
+
           const targetDPI = 70;
           const targetWidth = Math.floor(width * (targetDPI / 72));
           const targetHeight = Math.floor(height * (targetDPI / 72));
 
-          const image = this.sharp(img.data, {
+          const image = this.sharp(pixelData, {
             raw: { width, height, channels },
             density: targetDPI,
           })
@@ -353,3 +398,4 @@ class PDFSharp {
 }
 
 module.exports = OCRLoader;
+module.exports.PDFSharp = PDFSharp;

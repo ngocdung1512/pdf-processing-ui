@@ -69,6 +69,9 @@ coverage.xml
 *.swp
 *.swo
 
+# Local AI assistant configs
+OCR_LLM/.claude/
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -84,6 +87,14 @@ output/
 outputs/
 tmp/
 temp/
+
+# AnythingLLM runtime storage (local)
+OCR_LLM/storage/
+
+# Local reports / data (do not commit)
+OCR_LLM/test.csv
+OCR_LLM/Báo cáo*.csv
+OCR_LLM/Báo cáo*.md
 
 # Package manager caches
 .npm-cache/
