@@ -87,13 +87,12 @@ def detect_bboxes(model, image: np.ndarray, imgsz: int = 1024, conf: float = 0.1
     else:
         image_rgb = image
     
-    # Run prediction (verbose=False to avoid repeated "Ultralytics YOLOv..." and "Speed:..." when running in parallel workers)
+    # Run prediction
     det_res = model.predict(
         image_rgb,
         imgsz=imgsz,
         conf=conf,
         device='cuda' if torch.cuda.is_available() else 'cpu',
-        verbose=False,
     )
     
     # Get results from first (and only) result
@@ -191,6 +190,9 @@ def main():
     
     args = parser.parse_args()
     
+    # Resolve project root so relative paths work regardless of cwd
+    project_root = Path(__file__).resolve().parent
+
     # Check if PDF exists
     pdf_path = Path(args.pdf_path)
     if not pdf_path.exists():
@@ -198,9 +200,18 @@ def main():
         sys.exit(1)
     
     # Check if model exists
-    model_path = Path(args.model)
+    model_arg = Path(args.model)
+    if model_arg.is_absolute():
+        model_path = model_arg
+    else:
+        # Try resolve relative to cwd first, then fall back to project root
+        model_path = model_arg
+        if not model_path.exists():
+            model_path = project_root / model_arg
+    model_path = model_path.resolve()
     if not model_path.exists():
         print(f"Error: Model file not found: {model_path}")
+        print(f"Hint: Place the model at: {project_root / 'doclayout_yolo_docstructbench_imgsz1024.pt'}")
         sys.exit(1)
     
     # Create output directory

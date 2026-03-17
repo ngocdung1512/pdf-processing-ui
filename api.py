@@ -170,7 +170,7 @@ def process_pdf_background(job_id: str, pdf_path: Path, output_docx: Path, pdf_t
             str(output_docx),
         ]
         if pdf_type == "scan":
-            cmd.extend(["--dpi", "200"])  # explicit DPI for scan
+            cmd.extend(["--dpi", "300"])  # explicit DPI for scan (better Vietnamese OCR)
         
         print(f"[INFO] Job {job_id}: Starting conversion with command: {' '.join(cmd)}", flush=True)
         print(f"[INFO] Job {job_id}: Python executable: {sys.executable}", flush=True)

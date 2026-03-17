@@ -34,7 +34,7 @@ def main():
     parser.add_argument("pdf_file", help="Path to PDF file")
     parser.add_argument("--output", "-o", help="Output DOCX path", default=None)
     parser.add_argument("--max-pages", type=int, help="Maximum pages to process", default=None)
-    parser.add_argument("--dpi", type=int, default=200, help="DPI for PDF to image conversion (default: 200)")
+    parser.add_argument("--dpi", type=int, default=300, help="DPI for PDF to image conversion (default: 300)")
     parser.add_argument("--text-only", action="store_true", help="Output plain text paragraphs only (no layout/textboxes); faster for basic OCR.")
     
     args = parser.parse_args()
