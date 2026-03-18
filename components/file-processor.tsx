@@ -474,7 +474,7 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
         clearTimeout(timeoutId)
       }
     }
-  }, [jobId, state])
+  }, [jobId, state, onUnlock, pdfType])
 
   // ===== XỬ LÝ OCR THẬT =====
   const handleProcess = async () => {
