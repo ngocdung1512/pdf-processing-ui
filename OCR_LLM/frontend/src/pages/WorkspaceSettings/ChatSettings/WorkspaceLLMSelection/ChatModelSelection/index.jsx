@@ -8,10 +8,15 @@ export default function ChatModelSelection({
   workspace,
   setHasChanges,
 }) {
-  const { defaultModels, customModels, loading } =
+  const { defaultModels, customModels, loading, error } =
     useGetProviderModels(provider);
   const { t } = useTranslation();
   if (DISABLED_PROVIDERS.includes(provider)) return null;
+  const hasGroupedCustomModels =
+    !Array.isArray(customModels) && Object.keys(customModels).length > 0;
+  const hasAnyModels =
+    defaultModels.length > 0 ||
+    (Array.isArray(customModels) ? customModels.length > 0 : hasGroupedCustomModels);
 
   if (loading) {
     return (
@@ -31,9 +36,26 @@ export default function ChatModelSelection({
           className="border-none bg-theme-settings-input-bg text-white placeholder:text-theme-settings-input-placeholder text-sm rounded-lg focus:outline-primary-button active:outline-primary-button outline-none block w-full p-2.5"
         >
           <option disabled={true} selected={true}>
-            -- waiting for models --
+            Loading models... this can take a few seconds.
           </option>
         </select>
+      </div>
+    );
+  }
+
+  if (error || !hasAnyModels) {
+    return (
+      <div>
+        <div className="flex flex-col mt-6">
+          <label htmlFor="name" className="block input-label">
+            {t("chat.model.title")}
+          </label>
+          <p className="text-white text-opacity-60 text-xs font-medium py-1.5">
+            {error
+              ? "Could not load models from provider. Please verify provider configuration."
+              : "No models found for this provider yet. Please check provider settings."}
+          </p>
+        </div>
       </div>
     );
   }

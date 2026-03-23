@@ -18,12 +18,18 @@ numpy
 
 transformers>=4.45.0,<5.0.0
 accelerate>=1.0.0
-huggingface_hub>=0.23.0
+huggingface_hub>=0.34.0,<1.0
 
 # OCR: basic (ocr_basic.py) + advanced (scripts)
 paddleocr
-vietocr
-surya-ocr>=0.17.0
+vietocr==0.3.13
+# Pin VietOCR-dependent packages to avoid resolver backtracking/conflicts.
+albumentations==1.4.2
+einops==0.2.0
+gdown==4.4.0
+imgaug==0.4.0
+prefetch-generator==1.0.1
+scikit-image>=0.21.0
 qwen-vl-utils
 markdown
 htmldocx
@@ -32,7 +38,7 @@ python-docx
 PyMuPDF>=1.24.0
 pdf2image
 opencv-python>=4.10.0
-Pillow>=10.0.0
+Pillow==10.2.0
 ultralytics>=8.3.0
 pdf2docx
 

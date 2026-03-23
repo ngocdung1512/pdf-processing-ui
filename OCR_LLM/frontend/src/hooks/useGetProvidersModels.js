@@ -55,32 +55,62 @@ const groupedProviders = [
   "docker-model-runner",
   "sambanova",
 ];
+
+// Small in-memory cache to reduce repeated model fetch latency between views.
+const providerModelsCache = new Map();
 export default function useGetProviderModels(provider = null) {
   const [defaultModels, setDefaultModels] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    async function fetchProviderModels() {
-      if (!provider) return;
-      setLoading(true);
-      const { models = [] } = await System.customModels(provider);
-      if (
-        PROVIDER_DEFAULT_MODELS.hasOwnProperty(provider) &&
-        !groupedProviders.includes(provider)
-      ) {
-        setDefaultModels(PROVIDER_DEFAULT_MODELS[provider]);
-      } else {
-        setDefaultModels([]);
-      }
+    if (!provider) {
+      setLoading(false);
+      setError(null);
+      setDefaultModels([]);
+      setCustomModels([]);
+      return;
+    }
 
-      groupedProviders.includes(provider)
-        ? setCustomModels(groupModels(models))
-        : setCustomModels(models);
+    const cached = providerModelsCache.get(provider);
+    if (cached) {
+      setDefaultModels(cached.defaultModels);
+      setCustomModels(cached.customModels);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    async function fetchProviderModels() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { models = [] } = await System.customModels(provider);
+        const nextDefaultModels =
+          PROVIDER_DEFAULT_MODELS.hasOwnProperty(provider) &&
+          !groupedProviders.includes(provider)
+            ? PROVIDER_DEFAULT_MODELS[provider]
+            : [];
+        const nextCustomModels = groupedProviders.includes(provider)
+          ? groupModels(models)
+          : models;
+
+        setDefaultModels(nextDefaultModels);
+        setCustomModels(nextCustomModels);
+        providerModelsCache.set(provider, {
+          defaultModels: nextDefaultModels,
+          customModels: nextCustomModels,
+        });
+      } catch (e) {
+        setDefaultModels([]);
+        setCustomModels([]);
+        setError(e?.message || "Failed to load models");
+      }
       setLoading(false);
     }
     fetchProviderModels();
   }, [provider]);
 
-  return { defaultModels, customModels, loading };
+  return { defaultModels, customModels, loading, error };
 }

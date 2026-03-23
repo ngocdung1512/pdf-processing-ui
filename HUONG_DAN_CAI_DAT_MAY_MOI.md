@@ -1,49 +1,61 @@
-# Hướng dẫn cài đặt từ đầu trên máy mới (sau khi Git clone)
+# Hướng dẫn cài trên máy mới (làm theo từng bước)
 
-Tài liệu này hướng dẫn **từng bước** từ lúc clone repo đến khi chạy được ứng dụng PDF to DOCX trên một máy tính mới.
-
----
-
-## Cần tải model gì về máy mới?
-
-| Chức năng | Model | Cách có trên máy mới |
-|-----------|--------|------------------------|
-| **PDF → DOCX (Layout + OCR)** | `doclayout_yolo_docstructbench_imgsz1024.pt` | **Đi kèm repo** — clone có Git LFS là có file (không cần tải thêm). |
-| **PDF → DOCX chế độ OCR (AI)** | **Qwen2.5-VL** (vd: Qwen2.5-VL-3B) | **Cần tải thủ công** — không có trong repo. Tải từ Hugging Face, đặt vào thư mục gốc project (vd: `Qwen2.5-VL-3B`) hoặc chỉ đường dẫn khi chạy. |
-
+Tài liệu này dành cho trường hợp cài mới hoàn toàn.  
+Chỉ cần làm đúng thứ tự từ trên xuống là chạy được app.
 
 ---
 
-## Phần 1: Chuẩn bị (chỉ làm 1 lần trên máy)
+## 0) Kết quả mong muốn sau khi cài xong
 
-### 1.1. Cài Git (nếu chưa có)
+- Mở app chính tại `http://localhost:3000`
+- Backend chạy tại `http://localhost:8000`
+- (Tùy chọn) Chatbot AnythingLLM chạy tại `http://localhost:3002`
+- Chế độ OCR nâng cao dùng được với model Qwen local
 
-- Tải: https://git-scm.com/download/win  
-- Cài xong, mở **PowerShell** hoặc **Command Prompt** (CMD), kiểm tra:
+---
+
+## 1) Cài phần mềm nền tảng (chỉ làm 1 lần/máy)
+
+### 1.1 Cài Git
+
+- Download: [https://git-scm.com/download/win](https://git-scm.com/download/win)
+- Kiểm tra:
 
 ```powershell
 git --version
 ```
 
-### 1.2. Cài Python 3.11+
+### 1.2 Cài Git LFS (bắt buộc)
 
-- Tải: https://www.python.org/downloads/  
-- Khi cài, **bật** “Add Python to PATH”.  
+Model `.pt` trong repo dùng Git LFS, thiếu bước này sẽ clone không đủ file.
+
+- Download: [https://git-lfs.com/](https://git-lfs.com/)
+- Chạy 1 lần:
+
+```powershell
+git lfs install
+```
+
+### 1.3 Cài Python 3.11+
+
+- Download: [https://www.python.org/downloads/](https://www.python.org/downloads/)
+- Khi cài nhớ tick `Add Python to PATH`
 - Kiểm tra:
 
 ```powershell
 python --version
+pip --version
 ```
 
-Nếu lệnh không nhận, thử:
+Nếu máy dùng launcher:
 
 ```powershell
 py --version
 ```
 
-### 1.3. Cài Node.js 18+
+### 1.4 Cài Node.js 18+ (LTS)
 
-- Tải: https://nodejs.org/ (bản LTS).  
+- Download: [https://nodejs.org/](https://nodejs.org/)
 - Kiểm tra:
 
 ```powershell
@@ -51,224 +63,264 @@ node --version
 npm --version
 ```
 
-### 1.4. Cài Git LFS (để tải file model .pt khi clone)
+### 1.5 (Khuyên dùng) Cài Ollama cho Chatbot local
 
-Repo dùng Git LFS cho file model. Trên máy mới cần cài LFS rồi mới clone thì file `.pt` mới tải đủ.
-
-- Tải: https://git-lfs.com/ (chọn Windows, cài đặt).  
-- Mở lại PowerShell/CMD, chạy **1 lần**:
+- Download: [https://ollama.com/download](https://ollama.com/download)
+- Kiểm tra:
 
 ```powershell
-git lfs install
+ollama --version
 ```
 
 ---
 
-## Phần 2: Clone project và cài đặt
+## 2) Clone project và cài dependency
 
-### Bước 1: Mở terminal và clone repo
+> Ví dụ dưới đây dùng thư mục `D:\work`. Bạn có thể đổi sang nơi khác.
 
-**Lưu ý:** Đảm bảo đã cài **Git LFS** (Phần 1.4) và chạy `git lfs install` trước khi clone, để file model `.pt` được tải xuống.
-
-Mở **PowerShell** (hoặc CMD), chọn thư mục muốn đặt project (ví dụ Desktop):
+### 2.1 Clone repo
 
 ```powershell
-cd $env:USERPROFILE\Desktop
-```
-
-Clone project:
-
-```powershell
+cd D:\work
 git clone https://github.com/ngocdung1512/pdf-processing-ui.git
 cd pdf-processing-ui
 ```
 
-Sau khi clone xong, trong thư mục sẽ có sẵn file `doclayout_yolo_docstructbench_imgsz1024.pt` (nhờ Git LFS). Kiểm tra:
+Kiểm tra có file model YOLO đi kèm:
 
 ```powershell
-dir
+dir doclayout_yolo_docstructbench_imgsz1024.pt
 ```
 
-Phải thấy: `package.json`, `requirements.txt`, `api.py`, và `doclayout_yolo_docstructbench_imgsz1024.pt`.
+Nếu không thấy file này: cài lại Git LFS, rồi clone lại repo.
 
----
-
-### Bước 2: Tạo môi trường ảo Python
-
-Trong thư mục `pdf-processing-ui`:
-
-**PowerShell:**
+### 2.2 Tạo virtual environment Python
 
 ```powershell
 python -m venv conversion_env
 .\conversion_env\Scripts\Activate.ps1
 ```
 
-Nếu PowerShell báo lỗi về execution policy:
+Nếu PowerShell chặn script:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-Rồi chạy lại:
-
-```powershell
-.\conversion_env\Scripts\Activate.ps1
-```
-
-**CMD (Command Prompt):**
-
-```cmd
-python -m venv conversion_env
-conversion_env\Scripts\activate.bat
-```
-
-Khi thành công, đầu dòng lệnh sẽ có `(conversion_env)`.
-
----
-
-### Bước 3: Cài thư viện Python
-
-Vẫn trong cùng cửa sổ (đã kích hoạt `conversion_env`):
+### 2.3 Cài thư viện Python
 
 ```powershell
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-- Lần đầu có thể mất **10–30 phút** tùy mạng.  
-- Nếu báo lỗi với PyTorch/CUDA, có thể cài PyTorch phù hợp với máy trước, rồi chạy lại `pip install -r requirements.txt`.
+### 2.4 Cài DocLayout-YOLO (bắt buộc nếu dùng OCR nâng cao)
 
----
-
-### Bước 4: Cài thư viện Node.js (frontend)
-
-Mở **một cửa sổ terminal mới**, vào đúng thư mục project (không bắt buộc bật venv):
+Trong root project (cùng cấp `api.py`):
 
 ```powershell
-cd $env:USERPROFILE\Desktop\pdf-processing-ui
-npm install
-```
-
-Chờ cài xong.
-
----
-
-### Bước 5: Chạy ứng dụng
-
-Vẫn trong thư mục `pdf-processing-ui`.
-
-**Cách 1 – Double-click (dễ nhất):**
-
-- Mở File Explorer, vào thư mục `pdf-processing-ui`.
-- Double-click file **`start-dev.bat`**.  
-- Sẽ mở 2 cửa sổ (backend + frontend) và có thể tự mở trình duyệt.
-
-**Cách 2 – Chạy từ terminal:**
-
-**PowerShell:**
-
-```powershell
-cd $env:USERPROFILE\Desktop\pdf-processing-ui
-.\start-dev.ps1
-```
-
-**CMD:**
-
-```powershell
-cd %USERPROFILE%\Desktop\pdf-processing-ui
-start-dev.bat
-```
-
-Sau khi chạy:
-
-- **Giao diện web:** mở trình duyệt vào **http://localhost:3000**  
-- **API backend:** chạy tại http://localhost:8000  
-
-Nếu trình duyệt không tự mở, bạn tự vào: **http://localhost:3000**
-
----
-
-## Phần 3: Chỉ dùng chế độ Layout (PDF văn bản)
-
-Nếu bạn **chỉ cần chế độ Layout** (PDF văn bản → DOCX, không dùng OCR/AI), làm đủ **Phần 1 + Phần 2** là đủ. Không cần Phần 4.
-
----
-
-## Phần 4: Bật thêm chế độ OCR (AI) – tùy chọn
-
-Chế độ OCR (AI) cần thư viện **DocLayout-YOLO**. File model **`doclayout_yolo_docstructbench_imgsz1024.pt`** đã có trong repo (tải qua Git LFS khi clone), không cần tải thêm.
-
-Chỉ làm phần này nếu bạn cần chuyển PDF scan / ảnh sang DOCX bằng AI.
-
-### 4.1. Clone DocLayout-YOLO vào trong project
-
-Trong thư mục gốc `pdf-processing-ui`, mở PowerShell (có thể tắt venv):
-
-```powershell
-cd $env:USERPROFILE\Desktop\pdf-processing-ui
 git clone https://github.com/naver-ai/doclayout.git DocLayout-YOLO
+pip install -e .\DocLayout-YOLO
 ```
 
-(Nếu repo thực tế bạn dùng khác URL/ tên, hãy đổi cho đúng.)
+### 2.5 Cài frontend dependency
 
-### 4.2. Cài package DocLayout-YOLO ở chế độ editable
-
-Bật lại môi trường ảo rồi cài:
+Mở terminal mới (không cần bật venv):
 
 ```powershell
-.\conversion_env\Scripts\Activate.ps1
-pip install -e ./DocLayout-YOLO
-```
-
-Sau khi làm xong 4.1–4.2, chạy lại ứng dụng như **Bước 5** ở trên; chế độ OCR (AI) sẽ dùng được (file .pt đã có sẵn trong project).
-
----
-
-## Phần 5: (Tuỳ chọn) Chatbot – Trợ lý văn bản
-
-Nếu muốn dùng nút **"Mở trợ lý chatbot"** trên giao diện (AnythingLLM), làm thêm:
-
-1. Cài Yarn (nếu chưa có): `npm install -g yarn`
-2. Từ thư mục gốc project chạy một lần: `npm run chatbot:setup`
-3. Chạy app bằng **start-dev.bat** như Bước 5 — chatbot sẽ chạy trong nền; mở **http://localhost:3002** hoặc bấm "Mở trợ lý chatbot"
-
-Chi tiết: [OCR_LLM/CHATBOT_SETUP.md](./OCR_LLM/CHATBOT_SETUP.md) và [README.md](./README.md#bước-7-tuỳ-chọn-cài-chatbot-ocr_llm--anythingllm).
-
----
-
-## Xử lý lỗi thường gặp
-
-| Lỗi | Cách xử lý |
-|-----|------------|
-| `python` / `pip` không nhận | Cài lại Python, bật “Add to PATH”; hoặc dùng `py` thay `python`. |
-| `git` không nhận | Cài Git và mở lại terminal. |
-| Không kích hoạt được venv (PowerShell) | Chạy `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` rồi thử lại. |
-| Port 3000 hoặc 8000 đã dùng | Tắt app đang dùng port đó, hoặc đổi port trong lệnh chạy (xem README). |
-| `pip install -r requirements.txt` lỗi | Chạy `pip install --upgrade pip` rồi cài lại; nếu lỗi PyTorch thì cài đúng phiên bản PyTorch cho máy (CPU/CUDA). |
-| Trình duyệt không mở | Tự mở và vào **http://localhost:3000**. |
-| Clone xong không thấy file .pt | Cài Git LFS (1.4), chạy `git lfs install`, xóa thư mục project và clone lại. |
-
----
-
-## Tóm tắt nhanh (đã có Python + Node + Git + Git LFS)
-
-```powershell
-# Đảm bảo đã: git lfs install
-cd $env:USERPROFILE\Desktop
-git clone https://github.com/ngocdung1512/pdf-processing-ui.git
-cd pdf-processing-ui
-
-python -m venv conversion_env
-.\conversion_env\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# Mở terminal mới, không cần venv:
-cd $env:USERPROFILE\Desktop\pdf-processing-ui
+cd D:\work\pdf-processing-ui
 npm install
+```
 
-# Chạy (từ thư mục pdf-processing-ui):
+### 2.6 (Tùy chọn) Cài chatbot dependency
+
+```powershell
+npm install -g yarn
+npm run chatbot:setup
+```
+
+---
+
+## 3) Model OCR nâng cao (Qwen2.5-VL-3B) - trạng thái hiện tại
+
+Theo setup của bạn hiện tại, model OCR nâng cao đã có sẵn trong project:
+
+- `Qwen2.5-VL-3B` (root project)
+
+=> Khi cài máy mới, nếu bạn đã copy/clone đầy đủ thư mục này thì **không cần tải lại**.
+
+Chỉ khi thiếu thư mục model mới cần tải thêm từ Hugging Face.
+
+Nếu muốn đặt model ở ổ khác (ví dụ `E:\AI_Models\Qwen2.5-VL-3B`), truyền tham số:
+
+- `--ocr-model E:\AI_Models\Qwen2.5-VL-3B`
+
+---
+
+## 4) Chạy ứng dụng
+
+### 4.1 Cách dễ nhất
+
+- Double click file `start-dev.bat` ở root project
+
+Script sẽ tự mở backend + frontend (+ chatbot core nếu có setup).
+
+### 4.2 Cách chạy bằng lệnh
+
+```powershell
+cd D:\work\pdf-processing-ui
 .\start-dev.bat
 ```
 
-Sau đó mở **http://localhost:3000** trong trình duyệt.
+Mở trình duyệt:
+
+- `http://localhost:3000`
+
+---
+
+## 5) Setup model cho Chatbot (AnythingLLM)
+
+Phần này mới là phần bạn cần cho máy mới: model Qwen dùng để chat trong AnythingLLM.
+
+### 5.1 Nếu bạn chạy Chatbot bằng Ollama (khuyên dùng local)
+
+Sau khi cài Ollama, kéo model chat về máy:
+
+```powershell
+ollama pull qwen2.5:7b
+```
+
+Kiểm tra:
+
+```powershell
+ollama list
+```
+
+Nếu `Workspace Chat model` trống:
+
+1. Kiểm tra `ollama list` có model chưa
+2. Đảm bảo Ollama service đang chạy
+3. Reload trang AnythingLLM
+4. Provider phải là `Ollama`
+
+### 5.2 Nếu bạn dùng model Qwen tự host từ Hugging Face
+
+Vì model này là của bạn đẩy lên Hugging Face, tài liệu mẫu cho 4 model đã được thêm ở:
+
+- `MODELS_TO_DOWNLOAD.md` -> mục `Chatbot Qwen models (4 models you pushed to Hugging Face)`
+
+Trên máy mới, chỉ cần thay ID thật rồi chạy đúng các lệnh `snapshot_download`.
+
+Bạn có thể điền lại nhanh theo template:
+
+- HF repo: `<YOUR_HF_REPO_FOR_CHATBOT>`
+- Cách load: `<OLLAMA / VLLM / LM STUDIO / endpoint URL>`
+- Tên model hiển thị trong AnythingLLM: `<MODEL_NAME_SHOWN_IN_WORKSPACE_CHAT_MODEL>`
+- API key/token (nếu có): `<WHERE_TO_SET>`
+
+Khuyến nghị: lưu rõ mapping vào một bảng trong tài liệu nội bộ để máy mới chỉ copy y chang.
+
+---
+
+## 6) Cần đổi đường dẫn thì đổi ở đâu?
+
+Phần này là checklist nhanh khi chuyển máy/đổi ổ đĩa.
+
+### 6.1 Đường dẫn model Qwen OCR (PDF OCR nâng cao)
+
+- File: `process_pdf_to_docx.py`
+- Biến mặc định: `ocr_model_path`
+- Mặc định hiện tại: `./Qwen2.5-VL-3B`
+
+Bạn có thể:
+
+- Giữ nguyên và đặt model đúng thư mục này.
+- Hoặc truyền `--ocr-model <duong_dan_moi>`.
+
+### 6.2 Đường dẫn model YOLO layout
+
+- File: `process_pdf_to_docx.py`
+- Biến mặc định: `model_path`
+- Mặc định hiện tại: `./doclayout_yolo_docstructbench_imgsz1024.pt`
+
+### 6.3 URL API cho frontend chatbot
+
+- File: `OCR_LLM/frontend/.env`
+- Giá trị cần có:
+
+```env
+VITE_API_BASE=http://localhost:4101/api
+```
+
+### 6.4 Nơi cấu hình provider/model cho chatbot
+
+- Trong UI AnythingLLM:
+  - `Settings -> LLM Preferences` (system level)
+  - `Workspace Settings -> Chat Settings` (workspace level)
+- Mục cần chọn:
+  - Provider (`Ollama` hoặc provider bạn dùng)
+  - Model tương ứng (danh sách `Workspace Chat model`)
+
+### 6.5 Script download model phụ
+
+- File: `scripts/download-missing-models.ps1`
+- Script này tải `vgg_transformer.pth` + warm up PaddleOCR cache
+
+Chạy:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\download-missing-models.ps1
+```
+
+---
+
+## 7) Trình tự cài nhanh (copy/paste cho máy mới)
+
+```powershell
+# 1) Clone
+cd D:\work
+git lfs install
+git clone https://github.com/ngocdung1512/pdf-processing-ui.git
+cd pdf-processing-ui
+
+# 2) Python env
+python -m venv conversion_env
+.\conversion_env\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# 3) Frontend
+npm install
+
+# 4) Chatbot setup (optional)
+npm install -g yarn
+npm run chatbot:setup
+
+# 5) OCR model Qwen2.5-VL-3B đã có sẵn theo setup hiện tại (skip nếu đã có)
+
+# 6) Ollama model for chatbot (optional but recommended)
+ollama pull qwen2.5:7b
+
+# 7) Run app
+.\start-dev.bat
+```
+
+---
+
+## 8) Lỗi thường gặp
+
+| Hiện tượng | Nguyên nhân thường gặp | Cách xử lý nhanh |
+|---|---|---|
+| Double click `start-dev.bat` nhưng lỗi | Chạy sai file `.bat` hoặc sai thư mục | Chạy file `start-dev.bat` ở root project |
+| `Workspace Chat model` trống | Ollama chưa có model hoặc chưa chạy | `ollama list`, rồi `ollama pull ...`, reload AnythingLLM |
+| OCR nâng cao báo không thấy Qwen | Thiếu thư mục `Qwen2.5-VL-3B` | Tải model đúng path hoặc truyền `--ocr-model` |
+| Thiếu `doclayout_yolo` | Chưa cài DocLayout-YOLO editable | `pip install -e ./DocLayout-YOLO` |
+| Không activate được venv | PowerShell policy chặn | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+
+---
+
+## 9) Tài liệu liên quan
+
+- Tổng quan dự án: `README.md`
+- Danh sách model cần tải: `MODELS_TO_DOWNLOAD.md`
+- Hướng dẫn chatbot chi tiết: `OCR_LLM/CHATBOT_SETUP.md`

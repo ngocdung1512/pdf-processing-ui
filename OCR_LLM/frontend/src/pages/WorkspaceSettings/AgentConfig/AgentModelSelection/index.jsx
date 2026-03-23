@@ -39,7 +39,7 @@ export default function AgentModelSelection({
   setHasChanges,
 }) {
   const { slug } = useParams();
-  const { defaultModels, customModels, loading } =
+  const { defaultModels, customModels, loading, error } =
     useGetProviderModels(provider);
 
   const { t } = useTranslation();
@@ -65,6 +65,12 @@ export default function AgentModelSelection({
     );
   }
 
+  const hasGroupedCustomModels =
+    !Array.isArray(customModels) && Object.keys(customModels).length > 0;
+  const hasAnyModels =
+    defaultModels.length > 0 ||
+    (Array.isArray(customModels) ? customModels.length > 0 : hasGroupedCustomModels);
+
   if (loading) {
     return (
       <div>
@@ -83,9 +89,26 @@ export default function AgentModelSelection({
           className="border-none bg-theme-settings-input-bg text-white text-sm rounded-lg focus:outline-primary-button active:outline-primary-button outline-none block w-full p-2.5"
         >
           <option disabled={true} selected={true}>
-            {t("agent.mode.wait")}
+            Loading models... this can take a few seconds.
           </option>
         </select>
+      </div>
+    );
+  }
+
+  if (error || !hasAnyModels) {
+    return (
+      <div>
+        <div className="flex flex-col">
+          <label htmlFor="name" className="block input-label">
+            {t("agent.mode.title")}
+          </label>
+          <p className="text-white text-opacity-60 text-xs font-medium py-1.5">
+            {error
+              ? "Could not load models from provider. Please verify provider configuration."
+              : "No models found for this provider yet. Please check provider settings."}
+          </p>
+        </div>
       </div>
     );
   }
