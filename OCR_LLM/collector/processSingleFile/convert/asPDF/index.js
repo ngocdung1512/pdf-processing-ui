@@ -9,6 +9,17 @@ const { default: slugify } = require("slugify");
 const PDFLoader = require("./PDFLoader");
 const OCRLoader = require("../../../utils/OCRLoader");
 
+function isTruthy(value = "") {
+  return ["1", "true", "yes", "on"].includes(
+    String(value).trim().toLowerCase()
+  );
+}
+
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 async function asPdf({
   fullFilePath = "",
   filename = "",
@@ -24,17 +35,51 @@ async function asPdf({
   let docs = await pdfLoader.load();
   const totalPages = pdfLoader.numPages;
 
-  if (docs.length === 0) {
-    // Fully image-based (scanned) PDF — no text layer. OCR is disabled.
+  const enableOcrFallback =
+    options?.ocr?.enabled ??
+    isTruthy(process.env.COLLECTOR_ENABLE_PDF_OCR_FALLBACK);
+  const hasMissingTextPages = docs.length === 0 || docs.length < totalPages;
+
+  if (hasMissingTextPages && enableOcrFallback) {
+    const missingPages = Math.max(totalPages - docs.length, 0);
     console.log(
-      `[asPDF] No text content found for ${filename}. OCR is disabled — skipping.`
+      `[asPDF] ${filename} has ${missingPages} page(s) without text layer. Running OCR fallback.`
     );
-  } else if (docs.length < totalPages) {
-    // Mixed PDF: some pages have no text layer. OCR is disabled — only text-layer pages are used.
+
+    const ocrLoader = new OCRLoader({
+      targetLanguages:
+        options?.ocr?.langList || process.env.COLLECTOR_PDF_OCR_LANGS || "eng",
+    });
+    const ocrDocs = await ocrLoader.ocrPDF(fullFilePath, {
+      maxExecutionTime: parsePositiveInt(
+        process.env.COLLECTOR_PDF_OCR_MAX_EXECUTION_TIME_MS,
+        300_000
+      ),
+      batchSize: parsePositiveInt(process.env.COLLECTOR_PDF_OCR_BATCH_SIZE, 10),
+      maxWorkers: parsePositiveInt(process.env.COLLECTOR_PDF_OCR_MAX_WORKERS, 4),
+    });
+
+    const parsedPages = new Set(
+      docs
+        .map((doc) => doc?.metadata?.loc?.pageNumber)
+        .filter((pageNum) => Number.isInteger(pageNum))
+    );
+
+    for (const ocrDoc of ocrDocs) {
+      const pageNum = ocrDoc?.metadata?.loc?.pageNumber;
+      if (Number.isInteger(pageNum) && parsedPages.has(pageNum)) continue;
+      docs.push(ocrDoc);
+    }
+
+    docs = docs.sort((a, b) => {
+      const aPage = a?.metadata?.loc?.pageNumber ?? Number.MAX_SAFE_INTEGER;
+      const bPage = b?.metadata?.loc?.pageNumber ?? Number.MAX_SAFE_INTEGER;
+      return aPage - bPage;
+    });
+  } else if (hasMissingTextPages) {
+    const missingPages = Math.max(totalPages - docs.length, 0);
     console.log(
-      `[asPDF] ${filename} has ${
-        totalPages - docs.length
-      } image-only page(s) out of ${totalPages} total. OCR is disabled — those pages will be skipped.`
+      `[asPDF] ${filename} has ${missingPages} page(s) without text layer. OCR fallback is disabled.`
     );
   }
 
