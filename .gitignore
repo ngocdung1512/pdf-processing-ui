@@ -16,8 +16,7 @@ env/
 ENV/
 conversion_env/
 
-# Work-in-progress research tree (keep locally; do not push to GitHub)
-pdf_processing/
+# pdf_processing/ source is tracked; heavy assets stay ignored via pdf_processing/.gitignore
 
 # Local models / large data
 DocLayout-YOLO/

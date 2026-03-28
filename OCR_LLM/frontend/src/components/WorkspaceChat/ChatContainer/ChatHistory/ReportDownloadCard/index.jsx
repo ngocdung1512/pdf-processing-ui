@@ -30,6 +30,21 @@ export function isReportContent(message) {
   );
 }
 
+/**
+ * True when an assistant message can be exported to DOCX (any length).
+ * Excludes in-flight streams where a thought block is open but not closed.
+ */
+export function canExportAssistantMessageToDocx(message) {
+  if (!message || typeof message !== "string") return false;
+
+  const THOUGHT_OPEN = /(<think|<thinking|<thought)[\s>]/i;
+  const THOUGHT_CLOSE = /(<\/think>|<\/thinking>|<\/thought>)/i;
+  if (THOUGHT_OPEN.test(message) && !THOUGHT_CLOSE.test(message)) return false;
+
+  const clean = message.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  return clean.length > 0;
+}
+
 // ─── Inline markdown → TextRun[] ─────────────────────────────────────────────
 
 function parseInline(text, TextRun, forceBold = false) {
@@ -673,34 +688,63 @@ export default function ReportDownloadCard({ message, role }) {
   const [loading, setLoading] = useState(false);
   const [dlError, setDlError] = useState(null);
 
-  const isReport = useMemo(
-    () => role === "assistant" && isReportContent(message),
+  const showExport = useMemo(
+    () => role === "assistant" && canExportAssistantMessageToDocx(message),
     [message, role]
   );
 
-  if (!isReport) return null;
+  const looksLikeReport = useMemo(
+    () => isReportContent(message),
+    [message]
+  );
+
+  if (!showExport) return null;
 
   const hasTemplate = !!localStorage.getItem("DOCX_TEMPLATE_BINARY");
   const templateMode = localStorage.getItem("DOCX_TEMPLATE_MODE") || "style";
   const isNoiDung = hasTemplate && templateMode === "noidung";
-  // Template loaded but not yet processed (no boundary markers injected)
   const needsProcessing = hasTemplate && !isNoiDung;
 
+  const titleText = looksLikeReport
+    ? needsProcessing
+      ? "Mẫu chưa được xử lý"
+      : isNoiDung
+        ? "Mẫu báo cáo"
+        : "Phát hiện báo cáo"
+    : "Xuất Word";
+
   const subtitle = isNoiDung
-    ? "Đã xử lý"
+    ? "Đã xử lý — tải DOCX theo mẫu {noi_dung}"
     : needsProcessing
-    ? "Cần xử lý mẫu trước khi tải xuống"
-    : "Tải xuống dạng Word";
+      ? "Có mẫu style: thử ghép mẫu; nếu lỗi sẽ tải nội dung thuần"
+      : looksLikeReport
+        ? "Tải xuống dạng Word"
+        : "Tải toàn bộ phản hồi dạng .docx";
+
+  const downloadFileName = isNoiDung
+    ? "report_filled.docx"
+    : looksLikeReport
+      ? "report.docx"
+      : "chat_message.docx";
 
   const handleDownload = async () => {
     setLoading(true);
     setDlError(null);
     try {
       const blob = await generateDocx(message);
-      saveAs(blob, isNoiDung ? "report_filled.docx" : "report.docx");
+      saveAs(blob, downloadFileName);
     } catch (e) {
-      console.error("[ReportDownloadCard]", e);
-      setDlError(e.message || "Failed");
+      console.warn("[ReportDownloadCard] primary export failed, plain DOCX fallback", e);
+      try {
+        const tplStyles = JSON.parse(
+          localStorage.getItem("DOCX_TEMPLATE_STYLES") || "null"
+        );
+        const blob = await buildReportBlob(message, tplStyles);
+        saveAs(blob, looksLikeReport ? "report_plain.docx" : "chat_message.docx");
+      } catch (e2) {
+        console.error("[ReportDownloadCard]", e2);
+        setDlError(e2.message || "Failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -709,24 +753,24 @@ export default function ReportDownloadCard({ message, role }) {
   return (
     <div className="flex flex-col gap-y-1 mt-3">
       <div className={`flex items-center gap-x-3 p-3 rounded-lg border w-fit max-w-xs ${
-        needsProcessing
+        needsProcessing && looksLikeReport
           ? "border-amber-500/40 bg-amber-500/5"
           : "border-theme-sidebar-border bg-theme-bg-secondary"
       }`}>
         <div className="flex flex-col gap-y-0.5 flex-1 min-w-0">
-          <p className={`text-xs font-semibold leading-tight ${needsProcessing ? "text-amber-600 light:text-amber-700" : "text-theme-text-primary"}`}>
-            {needsProcessing ? "Mẫu chưa được xử lý" : isNoiDung ? "Mẫu báo cáo" : "Phát hiện báo cáo"}
+          <p className={`text-xs font-semibold leading-tight ${needsProcessing && looksLikeReport ? "text-amber-600 light:text-amber-700" : "text-theme-text-primary"}`}>
+            {titleText}
           </p>
-          <p className={`text-[11px] leading-tight ${needsProcessing ? "text-amber-600/80 light:text-amber-700/80" : "text-theme-text-secondary truncate"}`}>
-            {needsProcessing
-              ? "Nhấn \"AI điền\" hoặc \"Chọn vị trí\" ở thanh nhập để xử lý mẫu trước"
+          <p className={`text-[11px] leading-tight ${needsProcessing && looksLikeReport ? "text-amber-600/80 light:text-amber-700/80" : "text-theme-text-secondary truncate"}`}>
+            {needsProcessing && looksLikeReport
+              ? "Nhấn \"AI điền\" hoặc \"Chọn vị trí\" ở thanh nhập để xử lý mẫu đầy đủ"
               : subtitle}
           </p>
         </div>
         <button
           onClick={handleDownload}
-          disabled={loading || needsProcessing}
-          title={needsProcessing ? "Xử lý mẫu trước khi tải xuống" : "Tải xuống DOCX"}
+          disabled={loading}
+          title="Tải xuống DOCX"
           className="flex items-center gap-x-1 px-2 py-1 rounded-md bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-600 light:text-indigo-700 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <FileDoc size={14} weight="bold" />

@@ -1,10 +1,14 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { FileDoc, FolderOpen, X } from "@phosphor-icons/react";
 import { baseHeaders } from "@/utils/request";
 import { API_BASE } from "@/utils/constants";
 import ReportFormat from "@/models/reportFormat";
 import ReportFormatLibrary from "../ReportFormatLibrary";
 import NoiDungEditor from "../NoiDungEditor";
+import {
+  clearDocxTemplateLocalStorage,
+  DOCX_TEMPLATE_STORAGE_CLEARED_EVENT,
+} from "@/utils/docxTemplateStorage";
 
 const DOCX_MIME =
   "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,";
@@ -375,19 +379,29 @@ export default function DocxTemplateButton() {
     }
   }
 
+  useEffect(() => {
+    function onTemplateStorageCleared() {
+      setTemplateName(null);
+      setError(null);
+      setMode("style");
+      setEditorOpen(false);
+      pendingRef.current = null;
+    }
+    window.addEventListener(
+      DOCX_TEMPLATE_STORAGE_CLEARED_EVENT,
+      onTemplateStorageCleared
+    );
+    return () =>
+      window.removeEventListener(
+        DOCX_TEMPLATE_STORAGE_CLEARED_EVENT,
+        onTemplateStorageCleared
+      );
+  }, []);
+
   // ── Clear ──────────────────────────────────────────────────────────────────
 
   function clearTemplate() {
-    setTemplateName(null);
-    setError(null);
-    setMode("style");
-    setEditorOpen(false);
-    pendingRef.current = null;
-    localStorage.removeItem("DOCX_TEMPLATE_BINARY");
-    localStorage.removeItem("DOCX_TEMPLATE_TAGS");
-    localStorage.removeItem("DOCX_TEMPLATE_MODE");
-    localStorage.removeItem("DOCX_TEMPLATE_STYLES");
-    localStorage.removeItem("DOCX_TEMPLATE_PROMPT");
+    clearDocxTemplateLocalStorage();
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────

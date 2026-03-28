@@ -8,6 +8,7 @@ const { tokenizeString } = require("../../../utils/tokenizer");
 const { default: slugify } = require("slugify");
 const PDFLoader = require("./PDFLoader");
 const OCRLoader = require("../../../utils/OCRLoader");
+const { extractPdfViaPdfProcessing } = require("./pdfProcessingRemote");
 
 function isTruthy(value = "") {
   return ["1", "true", "yes", "on"].includes(
@@ -26,11 +27,78 @@ async function asPdf({
   options = {},
   metadata = {},
 }) {
+  console.log(`-- Working ${filename} --`);
+
+  const extractUrl = process.env.PDF_PROCESSING_EXTRACT_URL;
+  const tryRemoteFirst =
+    !!extractUrl?.trim() &&
+    !["0", "false", "no", "off"].includes(
+      String(process.env.PDF_PROCESSING_EXTRACT_FIRST ?? "true")
+        .trim()
+        .toLowerCase()
+    );
+
+  if (tryRemoteFirst) {
+    const remote = await extractPdfViaPdfProcessing(fullFilePath, filename);
+    const remoteText = String(remote?.pageContent || "").trim();
+    if (remote?.success && remoteText.length > 0) {
+      const content = remote.pageContent;
+      const data = {
+        id: v4(),
+        url: "file://" + fullFilePath,
+        title: metadata.title || remote.title || filename,
+        docAuthor: metadata.docAuthor || "pdf_processing extract",
+        description:
+          metadata.description ||
+          remote.title ||
+          "Extracted via pdf_processing bridge (full pipeline: PyMuPDF or YOLO+Qwen2.5-VL).",
+        docSource:
+          metadata.docSource ||
+          "pdf file uploaded by the user (pdf_processing).",
+        chunkSource: metadata.chunkSource || "",
+        published: createdDate(fullFilePath),
+        wordCount: content.split(/\s+/).filter(Boolean).length,
+        pageContent: content,
+        token_count_estimate: tokenizeString(content),
+      };
+      const document = writeToServerDocuments({
+        data,
+        filename: `${slugify(filename)}-${data.id}`,
+        options: { parseOnly: options.parseOnly },
+      });
+      trashFile(fullFilePath);
+      console.log(
+        `[SUCCESS]: ${filename} via pdf_processing extract & ready for embedding.\n`
+      );
+      return { success: true, reason: null, documents: [document] };
+    }
+
+    const errDetail =
+      remote == null
+        ? "could not read file or bridge URL unset"
+        : remote.error || "empty pageContent";
+
+    if (isTruthy(process.env.PDF_PROCESSING_EXTRACT_REQUIRE_BRIDGE)) {
+      console.error(
+        `[asPDF] pdf_processing bridge required (PDF_PROCESSING_EXTRACT_REQUIRE_BRIDGE) but failed: ${errDetail}`
+      );
+      trashFile(fullFilePath);
+      return {
+        success: false,
+        reason: `pdf_processing full pipeline failed: ${errDetail}. Start extract service: cd pdf_processing && python -m uvicorn api.extract_main:app --port 8001`,
+        documents: [],
+      };
+    }
+
+    console.log(
+      `[asPDF] pdf_processing extract failed (${errDetail}), using local PDF.js/Tesseract pipeline.`
+    );
+  }
+
   const pdfLoader = new PDFLoader(fullFilePath, {
     splitPages: true,
   });
 
-  console.log(`-- Working ${filename} --`);
   const pageContent = [];
   let docs = await pdfLoader.load();
   const totalPages = pdfLoader.numPages;
