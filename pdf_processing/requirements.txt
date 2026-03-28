@@ -1,0 +1,44 @@
+# pdf_processing — dependencies for OCR pipeline + FastAPI (extract bridge + full api.main)
+#
+# Install PyTorch with CUDA first (same as repo root README), then:
+#   cd pdf_processing
+#   python -m venv .venv
+#   .venv\Scripts\activate   # Windows
+#   pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# DocLayout-YOLO (YOLOv10 layout): from repository ROOT (parent of pdf_processing):
+#   pip install -e ./DocLayout-YOLO
+#
+# Optional VRAM savings for Qwen2.5-VL OCR (AnythingLLM bridge sets this via .bat):
+#   bitsandbytes — required for PDF_PIPELINE_OCR_LOAD_4BIT=true / load_4bit in CLI
+#   On some Windows setups bitsandbytes may crash; set PDF_PIPELINE_OCR_LOAD_4BIT=false.
+
+torch
+torchvision
+torchaudio
+numpy
+
+transformers>=4.45.0,<5.0.0
+accelerate>=1.0.0
+huggingface_hub>=0.34.0,<1.0
+bitsandbytes
+qwen-vl-utils
+markdown
+htmldocx
+
+python-docx
+lxml>=5.0.0
+PyMuPDF>=1.24.0
+pdf2image
+opencv-python>=4.10.0
+Pillow>=10.2.0
+
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Full Document Intelligence API (api.main): Chroma + LangChain tools
+chromadb>=0.4.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0

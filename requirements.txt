@@ -20,6 +20,9 @@ transformers>=4.45.0,<5.0.0
 accelerate>=1.0.0
 huggingface_hub>=0.34.0,<1.0
 
+# Quantized Qwen (OCR 4-bit / 8-bit). Optional on Windows if unstable — set PDF_PIPELINE_OCR_LOAD_4BIT=false.
+bitsandbytes
+
 # OCR: basic (ocr_basic.py) + advanced (scripts)
 paddleocr
 vietocr==0.3.13
@@ -35,6 +38,7 @@ markdown
 htmldocx
 
 python-docx
+lxml>=5.0.0
 PyMuPDF>=1.24.0
 pdf2image
 opencv-python>=4.10.0
@@ -46,5 +50,8 @@ pdf2docx
 fastapi
 uvicorn[standard]
 python-multipart
+
+# AnythingLLM PDF bridge + shared pdf_processing stack (duplicate ok with pdf_processing/requirements.txt):
+# After pip install -r requirements.txt, for a dedicated venv under pdf_processing see pdf_processing/requirements.txt
 
 # DocLayout-YOLO: not in repo. For OCR nâng cao (scan), clone into project root then: pip install -e ./DocLayout-YOLO

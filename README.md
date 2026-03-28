@@ -101,6 +101,25 @@ npm run chatbot:setup
 (Lệnh này cài dependency + Prisma cho server/frontend/collector trong `OCR_LLM`.)  
 *Cần Yarn: `npm install -g yarn` nếu chưa có. Chi tiết: [OCR_LLM/CHATBOT_SETUP.md](./OCR_LLM/CHATBOT_SETUP.md).*
 
+### Bước 7b: (Tuỳ chọn) Môi trường Python cho **pdf_processing** — PDF trong AnythingLLM
+
+Khi upload PDF trong chat AnythingLLM, Collector gọi API trích nội dung chạy trong thư mục **`pdf_processing/`** (port **8001**). Có thể:
+
+- **Dùng chung `conversion_env`:** sau `pip install -r requirements.txt` ở bước 4, cài thêm dependency đồng bộ với [pdf_processing/requirements.txt](./pdf_processing/requirements.txt) nếu thiếu (ví dụ `chromadb`, `langchain-community`, `lxml`, `bitsandbytes`), **hoặc**
+- **Tạo venv riêng** trong `pdf_processing` (khuyên dùng khi tách phiên bản thư viện):
+
+```powershell
+cd pdf_processing
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Cài **DocLayout-YOLO** từ thư mục gốc repo: `pip install -e ./DocLayout-YOLO`.  
+Tải weight YOLO và model **Qwen2.5-VL-3B** theo [pdf_processing/README.md](./pdf_processing/README.md).  
+`start-dev.bat` / `start-chatbot-core.bat` sẽ khởi động bridge **8001** nếu Python/script trỏ đúng venv.
+
 ### Bước 8: Chạy ứng dụng
 
 **Windows (khuyên dùng):**
@@ -134,6 +153,7 @@ Hoặc double-click file `start-dev.bat`. Script sẽ mở backend (port 8000), 
 
 - **Cài lần đầu:** `npm run chatbot:setup` (từ thư mục gốc).
 - **Chạy:** Bấm "Mở trợ lý chatbot" trên giao diện hoặc mở http://localhost:3002. Chi tiết: [OCR_LLM/CHATBOT_SETUP.md](./OCR_LLM/CHATBOT_SETUP.md).
+- **PDF trong chat:** cần service trích PDF trên **8001** (xem bước 7b và [pdf_processing/README.md](./pdf_processing/README.md) mục AnythingLLM). Kiểm tra: http://127.0.0.1:8001/health
 
 
 

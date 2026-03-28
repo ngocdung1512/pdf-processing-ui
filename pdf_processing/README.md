@@ -21,13 +21,23 @@ A complete pipeline to automatically analyze and convert PDF files (both Text-Ba
 ## 📥 Installation
 
 1.  **Clone the repository or download the source code.**
-2.  **Install dependencies**:
+2.  **Install dependencies** (from inside the `pdf_processing` folder):
     ```bash
+    cd pdf_processing
+    python -m venv .venv
+    # Windows: .venv\Scripts\activate
+    # Linux/macOS: source .venv/bin/activate
+    pip install --upgrade pip
     pip install -r requirements.txt
     ```
-    *Note: Make sure you have PyTorch installed with CUDA support if you intend to use the GPU. Check `requirements.txt` for the correct PyTorch installation command.*
+    *Install PyTorch with CUDA first if you use GPU (same guidance as the monorepo root `requirements.txt`).*
 
-3.  **Download Models**:
+3.  **DocLayout-YOLO** (required for scanned/hybrid PDF layout + OCR): from the **repository root** (parent of `pdf_processing`):
+    ```bash
+    pip install -e ./DocLayout-YOLO
+    ```
+
+4.  **Download Models**:
     *   The project expects the YOLO model weights (e.g., `doclayout_yolo_docstructbench_imgsz1024.pt`) to be in the root directory.
     *   **Qwen2.5-VL OCR Model**: The script uses `Qwen/Qwen2.5-VL-3B-Instruct` or a local version in `./Qwen2.5-VL-3B` by default. To download the current model locally, run:
         ```bash
@@ -131,6 +141,26 @@ POST /chat → LangChain Agent (Qwen3-4B) → Auto-routes to:
 | POST | `/chat` | Unified chat (Q&A, compare, edit) |
 | GET | `/download/{filename}` | Download revised files |
 | GET | `/health` | Health check |
+
+---
+
+## 🔗 AnythingLLM (Collector) — PDF extract bridge
+
+The monorepo wires **AnythingLLM** to this stack via a lightweight API that only runs ingestion (no Qwen3 chat load on startup):
+
+*   **Endpoint:** `POST /integrations/chatbot-extract-pdf` (multipart field `file`)
+*   **App:** `uvicorn api.extract_main:app --host 0.0.0.0 --port 8001`
+*   **Scripts (Windows):** `scripts/startup/start-pdf-extract-bridge.bat`, `start-chatbot-core.bat` from repo root.
+
+**Environment (optional):**
+
+| Variable | Purpose |
+|----------|---------|
+| `CHATBOT_PDF_EXTRACT_TOKEN` | If set, requests must send `Authorization: Bearer <token>`. |
+| `PDF_PIPELINE_OCR_LOAD_4BIT` | `true` / `false` — Qwen2.5-VL NF4 (less VRAM). Bridge `.bat` sets `true` by default. |
+| `PDF_PIPELINE_OCR_LOAD_8BIT` | `true` disables 4-bit and uses 8-bit instead. |
+
+Place YOLO weights (`doclayout_yolo_docstructbench_imgsz1024.pt`) and `Qwen2.5-VL-3B` (or HF cache) as described above.
 
 ### Code Structure
 *   `src/llm_pipeline/document_parser.py`: Parse Word/PDF → structured elements with IDs

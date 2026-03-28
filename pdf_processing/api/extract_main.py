@@ -3,8 +3,9 @@ Lightweight FastAPI app for PDF text extraction only (AnythingLLM Collector brid
 
 Does NOT load ChromaDB or LLM — faster startup than api.main.
 
-Usage (from repository root pdf_processing/):
-  pip install -r requirements.txt   # or your env
+Usage (from directory pdf_processing/):
+  pip install -r requirements.txt
+  pip install -e ../DocLayout-YOLO   # from monorepo root; required for YOLO layout + OCR
   uvicorn api.extract_main:app --host 0.0.0.0 --port 8001
 
 Collector .env:
