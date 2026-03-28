@@ -1,26 +1,32 @@
 import { Header } from "@/components/header"
 import { FileProcessor } from "@/components/file-processor"
+import { HomeFeaturePills, HomeHero } from "@/components/home-hero"
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-[#f8f9fa] flex flex-col pt-24">
-      <Header />
-      <div className="container mx-auto px-4 flex-1 flex flex-col justify-center pb-8">
-        <div className="text-center mb-6">
-          <h1 className="text-3xl md:text-4xl font-bold text-[#1a1a1a] mb-3 leading-relaxed">
-            Chuyển đổi văn bản nội bộ PDF sang DOCX
-          </h1>
-          <p className="text-base md:text-lg text-gray-600 max-w-2xl mx-auto">
-            Chuyển đổi, chỉnh sửa và ký tệp PDF dễ dàng từ mọi thiết bị.
-          </p>
-        </div>
+    <main className="relative flex min-h-screen flex-col pt-24">
+      <div
+        className="pointer-events-none fixed inset-0 -z-20 bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: "url('/background.jpg')" }}
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none fixed inset-0 -z-10 bg-white/80 backdrop-blur-[2px]"
+        aria-hidden
+      />
 
-        <div className="max-w-5xl mx-auto">
+      <Header />
+      <div className="container relative z-0 mx-auto flex flex-1 flex-col justify-center px-4 pb-8">
+        <HomeHero />
+
+        <div className="mx-auto mt-8 max-w-5xl md:mt-10">
           <FileProcessor />
         </div>
+
+        <HomeFeaturePills />
       </div>
 
-      <footer className="mt-auto py-8 border-t bg-white text-center text-sm text-gray-500">
+      <footer className="relative z-0 mt-auto border-t border-slate-200/80 bg-white/90 py-8 text-center text-sm text-slate-600 backdrop-blur-sm">
         © 2026 Học viện Kỹ thuật và Công nghệ An ninh. Bảo lưu mọi quyền.
       </footer>
     </main>

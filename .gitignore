@@ -64,6 +64,7 @@ coverage.xml
 .ipynb_checkpoints/
 
 # IDE / Editor
+.cursor/
 .vscode/
 .idea/
 *.swp
