@@ -16,6 +16,9 @@ env/
 ENV/
 conversion_env/
 
+# Work-in-progress research tree (keep locally; do not push to GitHub)
+pdf_processing/
+
 # Local models / large data
 DocLayout-YOLO/
 Qwen2.5-VL-3B/
