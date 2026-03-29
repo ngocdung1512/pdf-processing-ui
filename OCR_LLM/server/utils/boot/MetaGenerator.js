@@ -1,3 +1,7 @@
+/** Browser tab title only; rest of meta stays default AnythingLLM branding. */
+const TAB_BROWSER_TITLE = "Học viện Kỹ thuật và Công nghệ An ninh";
+const DEFAULT_SITE_META = "AnythingLLM | Your personal LLM trained on anything";
+
 /**
  * @typedef MetaTagDefinition
  * @property {('link'|'meta')} tag - the type of meta tag element
@@ -59,21 +63,21 @@ class MetaGenerator {
       {
         tag: "title",
         props: null,
-        content: "AnythingLLM | Your personal LLM trained on anything",
+        content: TAB_BROWSER_TITLE,
       },
 
       {
         tag: "meta",
         props: {
           name: "title",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: DEFAULT_SITE_META,
         },
       },
       {
         tag: "meta",
         props: {
           description: "title",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: DEFAULT_SITE_META,
         },
       },
 
@@ -87,14 +91,14 @@ class MetaGenerator {
         tag: "meta",
         props: {
           property: "og:title",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: DEFAULT_SITE_META,
         },
       },
       {
         tag: "meta",
         props: {
           property: "og:description",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: DEFAULT_SITE_META,
         },
       },
       {
@@ -119,14 +123,14 @@ class MetaGenerator {
         tag: "meta",
         props: {
           property: "twitter:title",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: DEFAULT_SITE_META,
         },
       },
       {
         tag: "meta",
         props: {
           property: "twitter:description",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: DEFAULT_SITE_META,
         },
       },
       {
@@ -227,9 +231,7 @@ class MetaGenerator {
           return {
             tag: "title",
             props: null,
-            content:
-              customTitle ??
-              "AnythingLLM | Your personal LLM trained on anything",
+            content: customTitle ?? TAB_BROWSER_TITLE,
           };
         }
         // Override meta title
@@ -238,9 +240,7 @@ class MetaGenerator {
             tag: "meta",
             props: {
               name: "title",
-              content:
-                customTitle ??
-                "AnythingLLM | Your personal LLM trained on anything",
+              content: customTitle ?? DEFAULT_SITE_META,
             },
           };
         }
@@ -250,9 +250,7 @@ class MetaGenerator {
             tag: "meta",
             props: {
               property: "og:title",
-              content:
-                customTitle ??
-                "AnythingLLM | Your personal LLM trained on anything",
+              content: customTitle ?? DEFAULT_SITE_META,
             },
           };
         }
@@ -262,9 +260,7 @@ class MetaGenerator {
             tag: "meta",
             props: {
               property: "twitter:title",
-              content:
-                customTitle ??
-                "AnythingLLM | Your personal LLM trained on anything",
+              content: customTitle ?? DEFAULT_SITE_META,
             },
           };
         }

@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'T07',
+  title: 'Học viện Kỹ thuật và Công nghệ An ninh',
   description: 'Chuyển đổi văn bản nội bộ PDF sang DOCX - Học viện Kỹ thuật và Công nghệ An ninh',
   icons: {
     icon: [
