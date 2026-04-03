@@ -7,10 +7,7 @@ import {
   CHAT_LAST_DOCX_BASE64_KEY,
   CHAT_LAST_DOCX_NAME_KEY,
 } from "@/utils/docxTemplateStorage";
-import {
-  tryExtractFindReplaceFromReply,
-} from "@/utils/extractFindReplaceFromAssistantReply";
-import { parseFindReplaceFromPrompt } from "@/utils/parseFindReplaceFromPrompt";
+import { getFindReplacePairsForTemplate } from "@/utils/extractFindReplaceFromAssistantReply";
 import showToast from "@/utils/toast";
 
 // ─── Report detection ─────────────────────────────────────────────────────────
@@ -792,52 +789,60 @@ export default function ReportDownloadCard({
         );
         return;
       }
-      const parsed =
-        (pairedUserMessage && parseFindReplaceFromPrompt(pairedUserMessage)) ||
-        tryExtractFindReplaceFromReply(message);
-      if (!parsed) {
+      const pairs = getFindReplacePairsForTemplate(pairedUserMessage, message);
+      if (!pairs.length) {
         showToast(
-          "Không tìm thấy lệnh thay tên — gõ trong tin nhắn dạng: thay tên A thành B (hoặc thay A thành B), hoặc để bot nói rõ \"A\" thành \"B\" trong phản hồi.",
+          "Không trích được cặp thay thế — trong tin nhắn dùng: thay A thành B, hoặc A thay là B; hoặc để bot liệt kê \"A\" → \"B\" trong phản hồi.",
           "warning"
         );
         return;
       }
 
       const dataUrl = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${stored.base64}`;
-      const bin = await fetch(dataUrl).then((r) => r.blob());
-      const file = new File([bin], stored.name, {
-        type:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      });
+      const docxType =
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      let currentBlob = await fetch(dataUrl).then((r) => r.blob());
+      const baseName = stored.name;
+      let totalReplacements = 0;
 
-      const fd = new FormData();
-      fd.append("file", file, file.name);
-      fd.append("find", parsed.find);
-      fd.append("replace", parsed.replace);
-      fd.append("matchCase", "false");
-      fd.append("wholeWord", "false");
+      for (let i = 0; i < pairs.length; i++) {
+        const { find, replace } = pairs[i];
+        const fd = new FormData();
+        fd.append(
+          "file",
+          new File([currentBlob], baseName, { type: docxType }),
+          baseName
+        );
+        fd.append("find", find);
+        fd.append("replace", replace);
+        fd.append("matchCase", "false");
+        fd.append("wholeWord", "false");
 
-      const res = await fetch(`${API_BASE}/utils/docx-find-replace`, {
-        method: "POST",
-        body: fd,
-        headers: baseHeaders(),
-      });
-      const ct = res.headers.get("content-type") || "";
-      if (!res.ok) {
-        if (ct.includes("application/json")) {
-          const j = await res.json();
-          throw new Error(j.error || "Request failed");
+        const res = await fetch(`${API_BASE}/utils/docx-find-replace`, {
+          method: "POST",
+          body: fd,
+          headers: baseHeaders(),
+        });
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok) {
+          if (ct.includes("application/json")) {
+            const j = await res.json();
+            const hint =
+              res.status === 422
+                ? ` (không thấy trong file: "${find.length > 60 ? `${find.slice(0, 60)}…` : find}")`
+                : "";
+            throw new Error((j.error || "Request failed") + hint);
+          }
+          throw new Error((await res.text()) || "Request failed");
         }
-        throw new Error((await res.text()) || "Request failed");
+        currentBlob = await res.blob();
+        totalReplacements += Number(res.headers.get("X-Replace-Count") || 0);
       }
-      const outBlob = await res.blob();
-      const count = res.headers.get("X-Replace-Count");
-      const outName = stored.name.replace(/\.docx$/i, "_replaced.docx");
-      saveAs(outBlob, outName);
+
+      const outName = baseName.replace(/\.docx$/i, "_replaced.docx");
+      saveAs(currentBlob, outName);
       showToast(
-        count != null
-          ? `Đã cập nhật file mẫu (${count} lần thay) — ${outName}`
-          : `Đã tải ${outName}`,
+        `Đã cập nhật file mẫu (${totalReplacements} lần thay, ${pairs.length} bước) — ${outName}`,
         "success"
       );
     } catch (e) {
@@ -866,7 +871,7 @@ export default function ReportDownloadCard({
               : subtitle}
           </p>
           <p className="text-[10px] leading-tight text-theme-text-secondary/80 mt-1">
-            DOCX = nội dung chat. &quot;Theo mẫu&quot; = file gốc đã upload / mẫu thư viện; lệnh thay tên lấy từ tin bạn gửi (vd: thay tên A thành B) hoặc từ phản hồi.
+            DOCX = nội dung chat. &quot;Theo mẫu&quot; = file gốc đã upload / mẫu thư viện; cặp thay thế lấy từ tin bạn gửi (thay A thành B, A thay là B) hoặc từ phản hồi có &quot;A&quot; → &quot;B&quot;.
           </p>
         </div>
         <div className="flex flex-col gap-y-1.5 shrink-0">
