@@ -1,6 +1,17 @@
 import { useMemo, useState } from "react";
-import { FileDoc } from "@phosphor-icons/react";
+import { FileDoc, FileArrowDown } from "@phosphor-icons/react";
 import { saveAs } from "file-saver";
+import { API_BASE } from "@/utils/constants";
+import { baseHeaders } from "@/utils/request";
+import {
+  CHAT_LAST_DOCX_BASE64_KEY,
+  CHAT_LAST_DOCX_NAME_KEY,
+} from "@/utils/docxTemplateStorage";
+import {
+  tryExtractFindReplaceFromReply,
+} from "@/utils/extractFindReplaceFromAssistantReply";
+import { parseFindReplaceFromPrompt } from "@/utils/parseFindReplaceFromPrompt";
+import showToast from "@/utils/toast";
 
 // ─── Report detection ─────────────────────────────────────────────────────────
 
@@ -682,10 +693,29 @@ async function generateDocx(message) {
   return buildReportBlob(message, tplStyles);
 }
 
+/**
+ * Original .docx from last chat upload (session) or library template (localStorage).
+ * @returns {{ base64: string, name: string } | null}
+ */
+function readStoredOriginalDocx() {
+  const b64 = sessionStorage.getItem(CHAT_LAST_DOCX_BASE64_KEY);
+  const name = sessionStorage.getItem(CHAT_LAST_DOCX_NAME_KEY);
+  if (b64) return { base64: b64, name: name || "document.docx" };
+  const raw = localStorage.getItem("DOCX_TEMPLATE_BINARY");
+  if (!raw) return null;
+  const base64 = raw.includes(",") ? raw.split(",")[1] : raw;
+  return { base64, name: "mau_bao_cao.docx" };
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ReportDownloadCard({ message, role }) {
+export default function ReportDownloadCard({
+  message,
+  role,
+  pairedUserMessage = null,
+}) {
   const [loading, setLoading] = useState(false);
+  const [loadingTemplate, setLoadingTemplate] = useState(false);
   const [dlError, setDlError] = useState(null);
 
   const showExport = useMemo(
@@ -750,9 +780,78 @@ export default function ReportDownloadCard({ message, role }) {
     }
   };
 
+  const handleDownloadByOriginalTemplate = async () => {
+    setLoadingTemplate(true);
+    setDlError(null);
+    try {
+      const stored = readStoredOriginalDocx();
+      if (!stored) {
+        showToast(
+          "Chưa có file .docx gốc — hãy đính kèm mẫu trong phiên chat này hoặc chọn mẫu từ thư viện (nút thư mục).",
+          "warning"
+        );
+        return;
+      }
+      const parsed =
+        (pairedUserMessage && parseFindReplaceFromPrompt(pairedUserMessage)) ||
+        tryExtractFindReplaceFromReply(message);
+      if (!parsed) {
+        showToast(
+          "Không tìm thấy lệnh thay tên — gõ trong tin nhắn dạng: thay tên A thành B (hoặc thay A thành B), hoặc để bot nói rõ \"A\" thành \"B\" trong phản hồi.",
+          "warning"
+        );
+        return;
+      }
+
+      const dataUrl = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${stored.base64}`;
+      const bin = await fetch(dataUrl).then((r) => r.blob());
+      const file = new File([bin], stored.name, {
+        type:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      fd.append("find", parsed.find);
+      fd.append("replace", parsed.replace);
+      fd.append("matchCase", "false");
+      fd.append("wholeWord", "false");
+
+      const res = await fetch(`${API_BASE}/utils/docx-find-replace`, {
+        method: "POST",
+        body: fd,
+        headers: baseHeaders(),
+      });
+      const ct = res.headers.get("content-type") || "";
+      if (!res.ok) {
+        if (ct.includes("application/json")) {
+          const j = await res.json();
+          throw new Error(j.error || "Request failed");
+        }
+        throw new Error((await res.text()) || "Request failed");
+      }
+      const outBlob = await res.blob();
+      const count = res.headers.get("X-Replace-Count");
+      const outName = stored.name.replace(/\.docx$/i, "_replaced.docx");
+      saveAs(outBlob, outName);
+      showToast(
+        count != null
+          ? `Đã cập nhật file mẫu (${count} lần thay) — ${outName}`
+          : `Đã tải ${outName}`,
+        "success"
+      );
+    } catch (e) {
+      console.error("[ReportDownloadCard/template]", e);
+      showToast(e.message || "Không tạo được file theo mẫu", "error");
+      setDlError(e.message || "Template export failed");
+    } finally {
+      setLoadingTemplate(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-y-1 mt-3">
-      <div className={`flex items-center gap-x-3 p-3 rounded-lg border w-fit max-w-xs ${
+      <div className={`flex items-center gap-x-3 p-3 rounded-lg border w-fit max-w-md ${
         needsProcessing && looksLikeReport
           ? "border-amber-500/40 bg-amber-500/5"
           : "border-theme-sidebar-border bg-theme-bg-secondary"
@@ -766,16 +865,32 @@ export default function ReportDownloadCard({ message, role }) {
               ? "Nhấn \"AI điền\" hoặc \"Chọn vị trí\" ở thanh nhập để xử lý mẫu đầy đủ"
               : subtitle}
           </p>
+          <p className="text-[10px] leading-tight text-theme-text-secondary/80 mt-1">
+            DOCX = nội dung chat. &quot;Theo mẫu&quot; = file gốc đã upload / mẫu thư viện; lệnh thay tên lấy từ tin bạn gửi (vd: thay tên A thành B) hoặc từ phản hồi.
+          </p>
         </div>
-        <button
-          onClick={handleDownload}
-          disabled={loading}
-          title="Tải xuống DOCX"
-          className="flex items-center gap-x-1 px-2 py-1 rounded-md bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-600 light:text-indigo-700 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <FileDoc size={14} weight="bold" />
-          {loading ? "…" : "DOCX"}
-        </button>
+        <div className="flex flex-col gap-y-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={loading || loadingTemplate}
+            title="Tải phản hồi dạng Word (nội dung chat)"
+            className="flex items-center justify-center gap-x-1 px-2 py-1 rounded-md bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-600 light:text-indigo-700 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <FileDoc size={14} weight="bold" />
+            {loading ? "…" : "DOCX"}
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadByOriginalTemplate}
+            disabled={loading || loadingTemplate}
+            title="Giữ layout file .docx gốc; thay tên theo phản hồi (vd: … thành …)"
+            className="flex items-center justify-center gap-x-1 px-2 py-1 rounded-md bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-600 light:text-emerald-800 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <FileArrowDown size={14} weight="bold" />
+            {loadingTemplate ? "…" : "Theo mẫu"}
+          </button>
+        </div>
       </div>
       {dlError && (
         <p className="text-[11px] text-red-400 max-w-xs truncate">{dlError}</p>

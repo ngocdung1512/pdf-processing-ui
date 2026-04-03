@@ -17,6 +17,7 @@ import { Tooltip } from "react-tooltip";
 import AttachmentManager from "./Attachments";
 import AttachItem from "./AttachItem";
 import DocxTemplateButton from "./DocxTemplateButton";
+import DocxReplaceFromChatButton from "./DocxReplaceFromChatButton";
 import {
   ATTACHMENTS_PROCESSED_EVENT,
   ATTACHMENTS_PROCESSING_EVENT,
@@ -294,6 +295,17 @@ export default function PromptInput({
         >
           <div className="w-[95vw] md:w-[750px] bg-theme-bg-chat-input light:bg-white light:border-solid light:border-[1px] light:border-theme-chat-input-border shadow-sm rounded-[20px] pwa:rounded-3xl flex flex-col px-2 overflow-hidden">
             <AttachmentManager attachments={attachments} />
+            {attachments.some(
+              (a) =>
+                a?.file?.name?.toLowerCase?.()?.endsWith?.(".docx")
+            ) && (
+              <div className="flex items-center justify-end mx-[7px] mb-1">
+                <DocxReplaceFromChatButton
+                  attachments={attachments}
+                  promptText={promptInput}
+                />
+              </div>
+            )}
             <div className="flex items-center mx-[7px]">
               <textarea
                 id={PROMPT_INPUT_ID}

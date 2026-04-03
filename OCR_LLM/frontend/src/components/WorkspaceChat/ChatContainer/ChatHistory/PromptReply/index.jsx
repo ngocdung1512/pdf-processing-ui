@@ -20,6 +20,7 @@ const PromptReply = ({
   error,
   workspace,
   sources = [],
+  pairedUserMessage = null,
 }) => {
   const assistantBackgroundColor = "bg-theme-bg-chat";
 
@@ -78,7 +79,11 @@ const PromptReply = ({
             {!pending && (
               <>
                 <TableDownloadCard message={reply} role="assistant" />
-                <ReportDownloadCard message={reply} role="assistant" />
+                <ReportDownloadCard
+                  message={reply}
+                  role="assistant"
+                  pairedUserMessage={pairedUserMessage}
+                />
               </>
             )}
           </div>

@@ -39,6 +39,7 @@ const HistoricalMessage = ({
   forkThread,
   metrics = {},
   alignmentCls = "",
+  pairedUserMessage = null,
 }) => {
   const { t } = useTranslation();
   const { isEditing } = useEditMessage({ chatId, role });
@@ -120,7 +121,11 @@ const HistoricalMessage = ({
                 messageId={uuid}
               />
               <TableDownloadCard message={message} role={role} />
-              <ReportDownloadCard message={message} role={role} />
+              <ReportDownloadCard
+                message={message}
+                role={role}
+                pairedUserMessage={pairedUserMessage}
+              />
               {isRefusalMessage && (
                 <Link
                   data-tooltip-id="query-refusal-info"

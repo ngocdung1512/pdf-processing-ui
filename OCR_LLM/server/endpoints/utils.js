@@ -80,6 +80,103 @@ function utilEndpoints(app) {
   );
 
   /**
+   * POST /utils/docx-find-replace
+   * Multipart: file (.docx), find, replace, optional matchCase, wholeWord.
+   * Applies find/replace paragraph-wise (merged w:t) so text split across runs still matches.
+   * Returns the modified .docx as binary; X-Replace-Count header when successful.
+   */
+  app.post(
+    "/utils/docx-find-replace",
+    async function (request, response, next) {
+      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const { handleFileUpload } = require("../utils/files/multer");
+      validatedRequest(request, response, () =>
+        handleFileUpload(request, response, next)
+      );
+    },
+    async function (request, response) {
+      const fs = require("fs");
+      try {
+        const { findReplaceInDocxBuffer } = require("../utils/docxFindReplace");
+        const file = request.file;
+        const findRaw = String(request.body?.find ?? "");
+        const replace = String(request.body?.replace ?? "");
+        const matchCase =
+          request.body?.matchCase === "true" || request.body?.matchCase === true;
+        const wholeWord =
+          request.body?.wholeWord === "true" || request.body?.wholeWord === true;
+
+        if (!file?.path) {
+          return response.status(400).json({
+            success: false,
+            error: "file is required.",
+          });
+        }
+
+        if (!findRaw.trim()) {
+          try {
+            fs.unlinkSync(file.path);
+          } catch {
+            /* non-fatal */
+          }
+          return response.status(400).json({
+            success: false,
+            error: "find is required.",
+          });
+        }
+
+        if (!file.originalname.toLowerCase().endsWith(".docx")) {
+          try {
+            fs.unlinkSync(file.path);
+          } catch {
+            /* non-fatal */
+          }
+          return response.status(400).json({
+            success: false,
+            error: "Only .docx files are supported.",
+          });
+        }
+
+        const buf = fs.readFileSync(file.path);
+        try {
+          fs.unlinkSync(file.path);
+        } catch {
+          /* non-fatal */
+        }
+
+        const { buffer: outBuf, count } = findReplaceInDocxBuffer(buf, findRaw, replace, {
+          matchCase,
+          wholeWord,
+        });
+
+        if (count === 0) {
+          return response.status(422).json({
+            success: false,
+            error: "No matches found for the search text.",
+            count: 0,
+          });
+        }
+
+        const base = file.originalname.replace(/\.docx$/i, "");
+        const outName = `${base}_replaced.docx`;
+        response.set(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+        response.set(
+          "Content-Disposition",
+          `attachment; filename*=UTF-8''${encodeURIComponent(outName)}`
+        );
+        response.set("X-Replace-Count", String(count));
+        return response.send(outBuf);
+      } catch (e) {
+        console.error("[docx-find-replace]", e.message);
+        return response.status(500).json({ success: false, error: e.message });
+      }
+    }
+  );
+
+  /**
    * POST /utils/auto-inject-noi-dung
    * Accepts a .docx binary (base64) + extracted content.
    * Uses the configured LLM to detect where the fixed header ends and injects

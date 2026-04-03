@@ -274,6 +274,10 @@ function buildMessages({
         <Chartable key={props.uuid} workspace={workspace} props={props} />
       );
     } else if (isLastBotReply && props.animate) {
+      const pairedUserForReply =
+        index > 0 && history[index - 1]?.role === "user"
+          ? history[index - 1].content
+          : null;
       acc.push(
         <PromptReply
           key={`prompt-reply-${props.uuid || index}`}
@@ -284,9 +288,16 @@ function buildMessages({
           error={props.error}
           workspace={workspace}
           closed={props.closed}
+          pairedUserMessage={pairedUserForReply}
         />
       );
     } else {
+      const pairedUserForAssistant =
+        props.role === "assistant" &&
+        index > 0 &&
+        history[index - 1]?.role === "user"
+          ? history[index - 1].content
+          : null;
       acc.push(
         <HistoricalMessage
           key={index}
@@ -305,6 +316,7 @@ function buildMessages({
           forkThread={forkThread}
           metrics={props.metrics}
           alignmentCls={getMessageAlignment?.(props.role)}
+          pairedUserMessage={pairedUserForAssistant}
         />
       );
     }

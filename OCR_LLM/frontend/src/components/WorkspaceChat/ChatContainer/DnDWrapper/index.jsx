@@ -7,6 +7,10 @@ import Workspace from "@/models/workspace";
 import showToast from "@/utils/toast";
 import FileUploadWarningModal from "./FileUploadWarningModal";
 import pluralize from "pluralize";
+import {
+  CHAT_LAST_DOCX_BASE64_KEY,
+  CHAT_LAST_DOCX_NAME_KEY,
+} from "@/utils/docxTemplateStorage";
 
 export const DndUploaderContext = createContext();
 export const REMOVE_ATTACHMENT_EVENT = "ATTACHMENT_REMOVE";
@@ -291,6 +295,26 @@ export function DnDFileUploaderProvider({
                     : { ...prevFile, ...updates }
               )
             );
+
+            if (attachment.file?.name?.toLowerCase().endsWith(".docx")) {
+              const reader = new FileReader();
+              reader.onload = () => {
+                try {
+                  const dataUrl = reader.result;
+                  if (typeof dataUrl !== "string" || !dataUrl.includes(","))
+                    return;
+                  const base64 = dataUrl.split(",")[1];
+                  sessionStorage.setItem(CHAT_LAST_DOCX_BASE64_KEY, base64);
+                  sessionStorage.setItem(
+                    CHAT_LAST_DOCX_NAME_KEY,
+                    attachment.file.name
+                  );
+                } catch (e) {
+                  console.warn("[DnD] CHAT_LAST_DOCX", e);
+                }
+              };
+              reader.readAsDataURL(attachment.file);
+            }
           })
           .catch((err) => {
             const msg =
