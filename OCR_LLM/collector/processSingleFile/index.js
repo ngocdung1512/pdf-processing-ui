@@ -11,6 +11,16 @@ const {
   isWithin,
 } = require("../utils/files");
 const RESERVED_FILES = ["__HOTDIR__.md"];
+const _inflightJobs = new Map();
+const _recentResults = new Map();
+
+function dedupeTtlMs() {
+  const raw = Number.parseInt(
+    process.env.COLLECTOR_PROCESSFILE_DEDUP_TTL_MS || "",
+    10
+  );
+  return Number.isFinite(raw) && raw >= 0 ? raw : 30_000;
+}
 
 /**
  * Process a single file and return the documents
@@ -74,12 +84,32 @@ async function processSingleFile(targetFilename, options = {}, metadata = {}) {
   const FileTypeProcessor = require(SUPPORTED_FILETYPE_CONVERTERS[
     processFileAs
   ]);
-  return await FileTypeProcessor({
-    fullFilePath,
-    filename: targetFilename,
-    options,
-    metadata,
-  });
+  const dedupeKey = `${fullFilePath}::${processFileAs}::${options?.parseOnly ? "parse" : "process"}`;
+  const ttl = dedupeTtlMs();
+  const now = Date.now();
+  const cached = _recentResults.get(dedupeKey);
+  if (cached && now - cached.at <= ttl) return cached.result;
+  if (cached && now - cached.at > ttl) _recentResults.delete(dedupeKey);
+
+  if (_inflightJobs.has(dedupeKey)) return await _inflightJobs.get(dedupeKey);
+
+  const job = (async () => {
+    return await FileTypeProcessor({
+      fullFilePath,
+      filename: targetFilename,
+      options,
+      metadata,
+    });
+  })();
+
+  _inflightJobs.set(dedupeKey, job);
+  try {
+    const result = await job;
+    _recentResults.set(dedupeKey, { at: Date.now(), result });
+    return result;
+  } finally {
+    if (_inflightJobs.get(dedupeKey) === job) _inflightJobs.delete(dedupeKey);
+  }
 }
 
 module.exports = {

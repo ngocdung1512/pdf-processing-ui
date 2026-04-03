@@ -17,6 +17,9 @@ cd /d "%PP%"
 REM Default 4-bit Qwen OCR (much lower VRAM than float16; reduces silent GPU OOM kills)
 if not defined PDF_PIPELINE_OCR_LOAD_4BIT set "PDF_PIPELINE_OCR_LOAD_4BIT=true"
 
+REM Plain text for Collector embed (no [Para_N] in chunks). Set false to keep ID-prefixed text.
+if not defined PDF_EXTRACT_PLAIN_PAGE_CONTENT set "PDF_EXTRACT_PLAIN_PAGE_CONTENT=true"
+
 set "PY="
 if exist "%PP%\.venv\Scripts\python.exe" set "PY=%PP%\.venv\Scripts\python.exe"
 if not defined PY if exist "%ROOT%\conversion_env\Scripts\python.exe" set "PY=%ROOT%\conversion_env\Scripts\python.exe"

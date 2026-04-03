@@ -45,6 +45,7 @@ async function tryExtractOnce(fullFilePath, filename, urlTrimmed) {
     const json = await res.json().catch(() => ({}));
     return {
       ok: res.ok,
+      status: res.status,
       success: !!json.success,
       pageContent: json.pageContent || "",
       title: json.title || basename,
@@ -54,6 +55,7 @@ async function tryExtractOnce(fullFilePath, filename, urlTrimmed) {
     console.warn("[pdfProcessingRemote] fetch failed:", e.message);
     return {
       ok: false,
+      status: 0,
       success: false,
       pageContent: "",
       title: basename,
@@ -81,7 +83,7 @@ async function extractPdfViaPdfProcessing(fullFilePath, filename) {
   const urlTrimmed = url.trim();
   const maxAttempts = Math.max(
     1,
-    Number.parseInt(process.env.PDF_PROCESSING_EXTRACT_RETRIES || "", 10) || 5
+    Number.parseInt(process.env.PDF_PROCESSING_EXTRACT_RETRIES || "", 10) || 1
   );
   const retryDelayMs = Math.max(
     0,
@@ -93,6 +95,7 @@ async function extractPdfViaPdfProcessing(fullFilePath, filename) {
 
   let last = {
     ok: false,
+    status: 0,
     success: false,
     pageContent: "",
     title: path.basename(filename || fullFilePath) || "document.pdf",
@@ -115,6 +118,14 @@ async function extractPdfViaPdfProcessing(fullFilePath, filename) {
           `[pdfProcessingRemote] succeeded on attempt ${attempt}/${maxAttempts}`
         );
       }
+      return result;
+    }
+
+    // Do not retry deterministic client/config errors.
+    if ([400, 401, 403, 404, 413, 415, 422].includes(Number(result.status))) {
+      console.warn(
+        `[pdfProcessingRemote] non-retryable status ${result.status}; stop retrying`
+      );
       return result;
     }
 

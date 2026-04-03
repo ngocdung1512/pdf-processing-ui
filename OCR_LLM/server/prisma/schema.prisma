@@ -131,14 +131,14 @@ model workspaces {
   vectorTag                    String?
   createdAt                    DateTime                       @default(now())
   openAiTemp                   Float?
-  openAiHistory                Int                            @default(20)
+  openAiHistory                Int                            @default(60)
   lastUpdatedAt                DateTime                       @default(now())
   // THIS IS THE SYSTEM PROMPT FOR THE WORKSPACE
   openAiPrompt                 String?
-  similarityThreshold          Float?                         @default(0.25)
+  similarityThreshold          Float?                         @default(0.1)
   chatProvider                 String?
   chatModel                    String?
-  topN                         Int?                           @default(4)
+  topN                         Int?                           @default(15)
   chatMode                     String?                        @default("chat")
   pfpFilename                  String?
   agentProvider                String?

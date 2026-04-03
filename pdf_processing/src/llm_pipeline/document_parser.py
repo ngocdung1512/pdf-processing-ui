@@ -87,6 +87,23 @@ class DocumentStructure:
                 lines.append(f"[{e.id}] (Table: {e.table_id}, Row {e.row}, Col {e.col}): {e.content}")
         return "\n".join(lines)
 
+    def get_plain_text_for_embed(self) -> str:
+        """
+        Plain text for AnythingLLM / Collector embedding (no [Para_N] / table IDs).
+        Keeps document element order so RAG chunks stay contiguous; avoids models echoing internal labels.
+        """
+        parts = []
+        for e in self.elements:
+            if e.type == "paragraph":
+                c = (e.content or "").strip()
+                if c:
+                    parts.append(c)
+            elif e.type == "table_cell":
+                c = (e.content or "").strip()
+                if c:
+                    parts.append(c)
+        return "\n\n".join(parts)
+
     def get_summary_text(self) -> str:
         para_count = sum(1 for e in self.elements if e.type == "paragraph")
         table_ids = set(e.table_id for e in self.elements if e.type == "table_cell" and e.table_id)
@@ -287,20 +304,41 @@ def parse_docx(docx_path: str, doc_id: str = None, file_name: str = None) -> Doc
             table_id = f"Table_{table_idx}"
 
             rows = block.findall(f'{{{WORD_NS}}}tr')
-            for row_idx, row in enumerate(rows):
+            grid = []
+            for row in rows:
                 cells = row.findall(f'{{{WORD_NS}}}tc')
-                for col_idx, cell in enumerate(cells):
-                    cell_text = _get_cell_text_from_runs(cell).strip()
-                    element = DocumentElement(
-                        id=f"{table_id}_Cell_{row_idx}_{col_idx}",
-                        type="table_cell",
-                        content=cell_text,
-                        table_id=table_id,
-                        row=row_idx,
-                        col=col_idx,
-                        metadata={},
-                    )
-                    elements.append(element)
+                grid.append(
+                    [_get_cell_text_from_runs(c).strip() for c in cells]
+                )
+
+            if grid:
+                width = max(len(r) for r in grid)
+                for r in grid:
+                    while len(r) < width:
+                        r.append("")
+                for col in range(width):
+                    carry = ""
+                    carry_from = -1
+                    for row_idx in range(len(grid)):
+                        t = grid[row_idx][col].strip()
+                        if t:
+                            carry = t
+                            carry_from = row_idx
+                        elif carry and row_idx > 0 and carry_from >= 1:
+                            grid[row_idx][col] = carry
+
+                for row_idx, row_cells in enumerate(grid):
+                    for col_idx, cell_text in enumerate(row_cells):
+                        element = DocumentElement(
+                            id=f"{table_id}_Cell_{row_idx}_{col_idx}",
+                            type="table_cell",
+                            content=cell_text,
+                            table_id=table_id,
+                            row=row_idx,
+                            col=col_idx,
+                            metadata={},
+                        )
+                        elements.append(element)
 
             table_idx += 1
 

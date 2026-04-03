@@ -15,13 +15,45 @@ const { Agent } = require("undici");
 // so no additional security is needed on the endpoint directly. Auth is done however by the express
 // middleware prior to leaving the node-side of the application so that is good enough >:)
 class CollectorApi {
-  /** @type {number} - The maximum timeout for extension requests in milliseconds */
-  extensionRequestTimeout = 15 * 60_000; // 15 minutes
-  /** @type {Agent} - The agent for extension requests */
-  extensionRequestAgent = new Agent({
-    headersTimeout: this.extensionRequestTimeout,
-    bodyTimeout: this.extensionRequestTimeout,
-  });
+  /**
+   * Single shared Agent for Collector calls that may run a long time (parse/process/OCR).
+   * Default: no timeout (0) so PDFs can finish whenever ready.
+   * Set COLLECTOR_LONG_RUNNING_TIMEOUT_MS to a positive number (ms) to cap, or "0"/unset/off for unlimited.
+   */
+  /** @type {Agent | null} */
+  #longRunningAgent = null;
+
+  #getLongRunningAgent() {
+    if (this.#longRunningAgent) return this.#longRunningAgent;
+    const raw = process.env.COLLECTOR_LONG_RUNNING_TIMEOUT_MS;
+    const unlimited =
+      raw === undefined ||
+      raw === "" ||
+      String(raw).toLowerCase() === "off" ||
+      raw === "0";
+    if (unlimited) {
+      this.#longRunningAgent = new Agent({
+        headersTimeout: 0,
+        bodyTimeout: 0,
+        connectTimeout: 0,
+      });
+      this.log(
+        "[CollectorApi] Long-running Collector requests: no HTTP timeout (wait until done)."
+      );
+    } else {
+      const ms = Number(raw);
+      const n = Number.isFinite(ms) && ms > 0 ? ms : 86_400_000;
+      this.#longRunningAgent = new Agent({
+        headersTimeout: n,
+        bodyTimeout: n,
+        connectTimeout: Math.min(n, 120_000),
+      });
+      this.log(
+        `[CollectorApi] Long-running Collector requests: timeout ${n}ms (COLLECTOR_LONG_RUNNING_TIMEOUT_MS).`
+      );
+    }
+    return this.#longRunningAgent;
+  }
 
   constructor() {
     const { CommunicationKey } = require("../comKey");
@@ -97,7 +129,7 @@ class CollectorApi {
         ),
       },
       body: data,
-      dispatcher: new Agent({ headersTimeout: 600000 }),
+      dispatcher: this.#getLongRunningAgent(),
     })
       .then((res) => {
         if (!res.ok) throw new Error("Response could not be completed");
@@ -138,6 +170,7 @@ class CollectorApi {
         ),
       },
       body: data,
+      dispatcher: this.#getLongRunningAgent(),
     })
       .then((res) => {
         if (!res.ok) throw new Error("Response could not be completed");
@@ -173,6 +206,7 @@ class CollectorApi {
         ),
       },
       body: data,
+      dispatcher: this.#getLongRunningAgent(),
     })
       .then((res) => {
         if (!res.ok) throw new Error("Response could not be completed");
@@ -200,9 +234,7 @@ class CollectorApi {
           new EncryptionManager().xPayload
         ),
       },
-      // Extensions do a lot of work, and may take a while to complete so we need to increase the timeout
-      // substantially so that they do not show a failure to the user early.
-      dispatcher: this.extensionRequestAgent,
+      dispatcher: this.#getLongRunningAgent(),
     })
       .then((res) => {
         if (!res.ok) throw new Error("Response could not be completed");
@@ -276,6 +308,7 @@ class CollectorApi {
         ),
       },
       body: data,
+      dispatcher: this.#getLongRunningAgent(),
     })
       .then((res) => {
         if (!res.ok) throw new Error("Response could not be completed");

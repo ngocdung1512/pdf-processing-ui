@@ -7,6 +7,7 @@ const {
   writeResponseChunk,
 } = require("../helpers/chat/responses");
 const { DocumentManager } = require("../DocumentManager");
+const { appendPermissiveRagIfEmpty } = require("./ragFallback");
 
 async function streamChatWithForEmbed(
   response,
@@ -131,6 +132,19 @@ async function streamChatWithForEmbed(
   // TLDR; reduces GitHub issues for "LLM citing document that has no answer in it" while keep answers highly accurate.
   contextTexts = [...contextTexts, ...filledSources.contextTexts];
   sources = [...sources, ...vectorSearchResults.sources];
+
+  const afterPermissiveRagEmbed = await appendPermissiveRagIfEmpty({
+    VectorDb,
+    workspace: embed.workspace,
+    input: message,
+    LLMConnector,
+    pinnedDocIdentifiers,
+    embeddingsCount,
+    contextTexts,
+    sources,
+  });
+  contextTexts = afterPermissiveRagEmbed.contextTexts;
+  sources = afterPermissiveRagEmbed.sources;
 
   // If in query mode and no sources are found in current search or backfilled from history, do not
   // let the LLM try to hallucinate a response or use general knowledge

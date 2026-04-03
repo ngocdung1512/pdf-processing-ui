@@ -4,6 +4,7 @@ const { WorkspaceChats } = require("../../models/workspaceChats");
 const { getVectorDbClass, getLLMProvider } = require("../helpers");
 const { writeResponseChunk } = require("../helpers/chat/responses");
 const { chatPrompt, sourceIdentifier } = require("./index");
+const { appendPermissiveRagIfEmpty } = require("./ragFallback");
 
 const { PassThrough } = require("stream");
 
@@ -117,6 +118,19 @@ async function chatSync({
   // For OpenAI Compatible chats, we cannot do backfilling so we simply aggregate results here.
   contextTexts = [...contextTexts, ...vectorSearchResults.contextTexts];
   sources = [...sources, ...vectorSearchResults.sources];
+
+  const afterPermissiveRagSync = await appendPermissiveRagIfEmpty({
+    VectorDb,
+    workspace,
+    input: String(prompt),
+    LLMConnector,
+    pinnedDocIdentifiers,
+    embeddingsCount,
+    contextTexts,
+    sources,
+  });
+  contextTexts = afterPermissiveRagSync.contextTexts;
+  sources = afterPermissiveRagSync.sources;
 
   // If in query mode and no context chunks are found from search, backfill, or pins -  do not
   // let the LLM try to hallucinate a response or use general knowledge and exit early
@@ -347,6 +361,19 @@ async function streamChat({
   // For OpenAI Compatible chats, we cannot do backfilling so we simply aggregate results here.
   contextTexts = [...contextTexts, ...vectorSearchResults.contextTexts];
   sources = [...sources, ...vectorSearchResults.sources];
+
+  const afterPermissiveRagStream = await appendPermissiveRagIfEmpty({
+    VectorDb,
+    workspace,
+    input: String(prompt),
+    LLMConnector,
+    pinnedDocIdentifiers,
+    embeddingsCount,
+    contextTexts,
+    sources,
+  });
+  contextTexts = afterPermissiveRagStream.contextTexts;
+  sources = afterPermissiveRagStream.sources;
 
   // If in query mode and no context chunks are found from search, backfill, or pins -  do not
   // let the LLM try to hallucinate a response or use general knowledge and exit early

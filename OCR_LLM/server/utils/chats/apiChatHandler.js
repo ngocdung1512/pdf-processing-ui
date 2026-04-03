@@ -18,6 +18,12 @@ const { CollectorApi } = require("../collectorApi");
 const fs = require("fs");
 const path = require("path");
 const { hotdirPath, normalizePath, isWithin } = require("../files");
+const {
+  prepareHybridState,
+  requestHybridChatbot,
+  hasPdfLikeDocumentAttachment,
+} = require("./hybridChatbot");
+const { appendPermissiveRagIfEmpty } = require("./ragFallback");
 /**
  * @typedef ResponseObject
  * @property {string} id - uuid of response
@@ -149,6 +155,62 @@ async function chatSync({
   // Since preset commands are not supported in API calls, we can just process the message here
   const processedMessage = await grepAllSlashCommands(message);
   message = processedMessage;
+
+  const { useHybrid, hybridDocIds } = await prepareHybridState(
+    message,
+    attachments,
+    workspace,
+    thread,
+    sessionId,
+    user
+  );
+  let runHybrid = useHybrid;
+  if (
+    useHybrid &&
+    (hybridDocIds?.length || 0) === 0 &&
+    hasPdfLikeDocumentAttachment(attachments)
+  ) {
+    console.warn(
+      "[Hybrid Router] PDF/sheet attached but no doc_id; fallback to AnythingLLM."
+    );
+    runHybrid = false;
+  }
+  if (runHybrid) {
+    try {
+      const hybrid = await requestHybridChatbot({
+        message,
+        sessionId,
+        docIds: hybridDocIds,
+      });
+      const textResponse = String(hybrid?.response || "Không có kết quả.");
+      const { chat } = await WorkspaceChats.new({
+        workspaceId: workspace.id,
+        prompt: message,
+        response: {
+          text: textResponse,
+          sources: [],
+          attachments,
+          type: chatMode,
+          metrics: { route: `hybrid:${hybrid?.route || "chatbot"}` },
+        },
+        threadId: thread?.id || null,
+        apiSessionId: sessionId,
+        user,
+      });
+      return {
+        id: uuid,
+        type: "textResponse",
+        close: true,
+        error: null,
+        chatId: chat.id,
+        textResponse,
+        sources: [],
+        metrics: { route: `hybrid:${hybrid?.route || "chatbot"}` },
+      };
+    } catch (error) {
+      console.warn("[Hybrid Router] fallback to AnythingLLM:", error.message);
+    }
+  }
 
   if (EphemeralAgentHandler.isAgentInvocation({ message })) {
     await Telemetry.sendTelemetry("agent_chat_started");
@@ -340,6 +402,19 @@ async function chatSync({
   contextTexts = [...contextTexts, ...filledSources.contextTexts];
   sources = [...sources, ...vectorSearchResults.sources];
 
+  const afterPermissiveRag = await appendPermissiveRagIfEmpty({
+    VectorDb,
+    workspace,
+    input: message,
+    LLMConnector,
+    pinnedDocIdentifiers,
+    embeddingsCount,
+    contextTexts,
+    sources,
+  });
+  contextTexts = afterPermissiveRag.contextTexts;
+  sources = afterPermissiveRag.sources;
+
   // If in query mode and no context chunks are found from search, backfill, or pins -  do not
   // let the LLM try to hallucinate a response or use general knowledge and exit early
   if (chatMode === "query" && contextTexts.length === 0) {
@@ -491,6 +566,70 @@ async function streamChat({
   // Since preset commands are not supported in API calls, we can just process the message here
   const processedMessage = await grepAllSlashCommands(message);
   message = processedMessage;
+
+  const { useHybrid, hybridDocIds } = await prepareHybridState(
+    message,
+    attachments,
+    workspace,
+    thread,
+    sessionId,
+    user
+  );
+  let runHybrid = useHybrid;
+  if (
+    useHybrid &&
+    (hybridDocIds?.length || 0) === 0 &&
+    hasPdfLikeDocumentAttachment(attachments)
+  ) {
+    console.warn(
+      "[Hybrid Router] PDF/sheet attached but no doc_id; fallback to AnythingLLM."
+    );
+    runHybrid = false;
+  }
+  if (runHybrid) {
+    try {
+      const hybrid = await requestHybridChatbot({
+        message,
+        sessionId,
+        docIds: hybridDocIds,
+      });
+      const textResponse = String(hybrid?.response || "Không có kết quả.");
+      const { chat } = await WorkspaceChats.new({
+        workspaceId: workspace.id,
+        prompt: message,
+        response: {
+          text: textResponse,
+          sources: [],
+          attachments,
+          type: chatMode,
+          metrics: { route: `hybrid:${hybrid?.route || "chatbot"}` },
+        },
+        threadId: thread?.id || null,
+        apiSessionId: sessionId,
+        user,
+      });
+      writeResponseChunk(response, {
+        uuid,
+        type: "textResponseChunk",
+        textResponse,
+        close: true,
+        error: false,
+        metrics: { route: `hybrid:${hybrid?.route || "chatbot"}` },
+      });
+      writeResponseChunk(response, {
+        uuid,
+        type: "finalizeResponseStream",
+        close: true,
+        error: false,
+        chatId: chat.id,
+        metrics: { route: `hybrid:${hybrid?.route || "chatbot"}` },
+        sources: [],
+      });
+      return;
+    } catch (error) {
+      console.warn("[Hybrid Router] fallback to AnythingLLM:", error.message);
+    }
+  }
 
   if (EphemeralAgentHandler.isAgentInvocation({ message })) {
     await Telemetry.sendTelemetry("agent_chat_started");
@@ -692,6 +831,19 @@ async function streamChat({
   // TLDR; reduces GitHub issues for "LLM citing document that has no answer in it" while keep answers highly accurate.
   contextTexts = [...contextTexts, ...filledSources.contextTexts];
   sources = [...sources, ...vectorSearchResults.sources];
+
+  const afterPermissiveRagStream = await appendPermissiveRagIfEmpty({
+    VectorDb,
+    workspace,
+    input: message,
+    LLMConnector,
+    pinnedDocIdentifiers,
+    embeddingsCount,
+    contextTexts,
+    sources,
+  });
+  contextTexts = afterPermissiveRagStream.contextTexts;
+  sources = afterPermissiveRagStream.sources;
 
   // If in query mode and no context chunks are found from search, backfill, or pins -  do not
   // let the LLM try to hallucinate a response or use general knowledge and exit early

@@ -264,6 +264,13 @@ class OllamaAILLM {
     ];
   }
 
+  // Max new tokens per completion; Ollama default can be low and truncate long answers.
+  static predictTokenLimit() {
+    const raw = process.env.OLLAMA_PREDICT_TOKENS;
+    const n = raw ? Number.parseInt(String(raw), 10) : 2048;
+    return Number.isFinite(n) && n > 0 ? n : 2048;
+  }
+
   async getChatCompletion(messages = null, { temperature = 0.7 }) {
     const result = await LLMPerformanceMonitor.measureAsyncFunction(
       this.client
@@ -276,6 +283,7 @@ class OllamaAILLM {
             temperature,
             use_mlock: true,
             num_ctx: this.promptWindowLimit(),
+            num_predict: OllamaAILLM.predictTokenLimit(),
           },
         })
         .then((res) => {
@@ -329,6 +337,7 @@ class OllamaAILLM {
           temperature,
           use_mlock: true,
           num_ctx: this.promptWindowLimit(),
+          num_predict: OllamaAILLM.predictTokenLimit(),
         },
       }),
       messages,

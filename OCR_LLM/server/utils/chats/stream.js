@@ -12,6 +12,12 @@ const {
   recentChatHistory,
   sourceIdentifier,
 } = require("./index");
+const {
+  prepareHybridState,
+  requestHybridChatbot,
+  hasPdfLikeDocumentAttachment,
+} = require("./hybridChatbot");
+const { appendPermissiveRagIfEmpty } = require("./ragFallback");
 
 const VALID_CHAT_MODE = ["chat", "query"];
 
@@ -49,6 +55,71 @@ async function streamChatWithWorkspace(
     thread,
   });
   if (isAgentChat) return;
+
+  const { useHybrid, hybridDocIds } = await prepareHybridState(
+    updatedMessage,
+    attachments,
+    workspace,
+    thread,
+    null,
+    user
+  );
+  let runHybrid = useHybrid;
+  if (
+    useHybrid &&
+    (hybridDocIds?.length || 0) === 0 &&
+    hasPdfLikeDocumentAttachment(attachments)
+  ) {
+    console.warn(
+      "[Hybrid Router] PDF/sheet attached but no doc_id; fallback to AnythingLLM."
+    );
+    runHybrid = false;
+  }
+  if (runHybrid) {
+    try {
+      const hybrid = await requestHybridChatbot({
+        message: updatedMessage,
+        sessionId: null,
+        docIds: hybridDocIds,
+      });
+      const textResponse = String(hybrid?.response || "Không có kết quả.");
+      const route = hybrid?.route || "chatbot";
+      const { chat } = await WorkspaceChats.new({
+        workspaceId: workspace.id,
+        prompt: updatedMessage,
+        response: {
+          text: textResponse,
+          sources: [],
+          attachments,
+          type: chatMode,
+          metrics: { route: `hybrid:${route}` },
+        },
+        include: true,
+        threadId: thread?.id || null,
+        user,
+      });
+      writeResponseChunk(response, {
+        uuid,
+        type: "textResponseChunk",
+        textResponse,
+        close: true,
+        error: false,
+        metrics: { route: `hybrid:${route}` },
+      });
+      writeResponseChunk(response, {
+        uuid,
+        type: "finalizeResponseStream",
+        close: true,
+        error: false,
+        chatId: chat.id,
+        metrics: { route: `hybrid:${route}` },
+        sources: [],
+      });
+      return;
+    } catch (error) {
+      console.warn("[Hybrid Router] fallback to AnythingLLM:", error.message);
+    }
+  }
 
   const LLMConnector = getLLMProvider({
     provider: workspace?.chatProvider,
@@ -194,6 +265,19 @@ async function streamChatWithWorkspace(
   // TLDR; reduces GitHub issues for "LLM citing document that has no answer in it" while keep answers highly accurate.
   contextTexts = [...contextTexts, ...filledSources.contextTexts];
   sources = [...sources, ...vectorSearchResults.sources];
+
+  const afterPermissiveRag = await appendPermissiveRagIfEmpty({
+    VectorDb,
+    workspace,
+    input: updatedMessage,
+    LLMConnector,
+    pinnedDocIdentifiers,
+    embeddingsCount,
+    contextTexts,
+    sources,
+  });
+  contextTexts = afterPermissiveRag.contextTexts;
+  sources = afterPermissiveRag.sources;
 
   // If in query mode and no context chunks are found from search, backfill, or pins -  do not
   // let the LLM try to hallucinate a response or use general knowledge and exit early

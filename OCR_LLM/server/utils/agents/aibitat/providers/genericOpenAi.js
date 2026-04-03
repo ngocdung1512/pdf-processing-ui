@@ -35,8 +35,8 @@ class GenericOpenAiProvider extends InheritMultiple([Provider, UnTooled]) {
     this.verbose = true;
     this._supportsToolCalling = null;
     this.maxTokens = process.env.GENERIC_OPEN_AI_MAX_TOKENS
-      ? toValidNumber(process.env.GENERIC_OPEN_AI_MAX_TOKENS, 1024)
-      : 1024;
+      ? toValidNumber(process.env.GENERIC_OPEN_AI_MAX_TOKENS, 8192)
+      : 8192;
   }
 
   get client() {

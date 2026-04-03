@@ -30,9 +30,10 @@ class GenericOpenAiLLM {
     });
     this.model =
       modelPreference ?? process.env.GENERIC_OPEN_AI_MODEL_PREF ?? null;
+    // Default 8192 completion tokens when unset — avoids replies feeling capped at ~1024.
     this.maxTokens = process.env.GENERIC_OPEN_AI_MAX_TOKENS
-      ? toValidNumber(process.env.GENERIC_OPEN_AI_MAX_TOKENS, 1024)
-      : 1024;
+      ? toValidNumber(process.env.GENERIC_OPEN_AI_MAX_TOKENS, 8192)
+      : 8192;
     if (!this.model)
       throw new Error("GenericOpenAI must have a valid model set.");
     this.limits = {

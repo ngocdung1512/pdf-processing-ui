@@ -16,6 +16,26 @@ const { PushNotifications } = require("../PushNotifications");
 // Update .env keys with the correct values and boot. These are temporary and not real SSL certs - only use for local.
 // Test with https://localhost:3001/api/ping
 // build and copy frontend to server/public with correct API_BASE and start server in prod model and all should be ok
+
+/** 0 = wait until long PDF parse finishes. Set HTTP_SERVER_SOCKET_TIMEOUT_MS to cap (ms). */
+function applyHttpServerTimeouts(server) {
+  if (!server || typeof server.setTimeout !== "function") return;
+  const raw = process.env.HTTP_SERVER_SOCKET_TIMEOUT_MS;
+  const ms =
+    raw === undefined || raw === "" || raw === "0"
+      ? 0
+      : Number(raw);
+  const v = Number.isFinite(ms) && ms >= 0 ? ms : 0;
+  server.setTimeout(v);
+  if (server.requestTimeout !== undefined) server.requestTimeout = v;
+  if (server.headersTimeout !== undefined) server.headersTimeout = v;
+  if (v === 0) {
+    console.log(
+      "\x1b[36m[HTTP]\x1b[0m Server socket/request timeouts: disabled (long parse OK)."
+    );
+  }
+}
+
 function bootSSL(app, port = 3001) {
   try {
     console.log(
@@ -41,6 +61,8 @@ function bootSSL(app, port = 3001) {
       })
       .on("error", catchSigTerms);
 
+    applyHttpServerTimeouts(server);
+
     require("@mintplex-labs/express-ws").default(app, server);
     return { app, server };
   } catch (e) {
@@ -60,7 +82,7 @@ function bootSSL(app, port = 3001) {
 function bootHTTP(app, port = 3001) {
   if (!app) throw new Error('No "app" defined - crashing!');
 
-  app
+  const server = app
     .listen(port, async () => {
       await markOnboarded();
       await setupTelemetry();
@@ -73,7 +95,9 @@ function bootHTTP(app, port = 3001) {
     })
     .on("error", catchSigTerms);
 
-  return { app, server: null };
+  applyHttpServerTimeouts(server);
+
+  return { app, server };
 }
 
 function catchSigTerms() {

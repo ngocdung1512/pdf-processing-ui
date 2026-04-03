@@ -62,6 +62,7 @@ class OllamaProvider extends InheritMultiple([Provider, UnTooled]) {
     );
     return {
       num_ctx: OllamaAILLM.promptWindowLimit(this.model),
+      num_predict: OllamaAILLM.predictTokenLimit(),
     };
   }
 

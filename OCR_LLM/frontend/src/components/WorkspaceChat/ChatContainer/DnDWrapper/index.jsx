@@ -232,8 +232,8 @@ export function DnDFileUploaderProvider({
       formData.append("file", attachment.file, attachment.file.name);
       formData.append("threadSlug", threadSlug || null);
       promises.push(
-        Workspace.parseFile(workspace.slug, formData).then(
-          async ({ response, data }) => {
+        Workspace.parseFile(workspace.slug, formData)
+          .then(async ({ response, data }) => {
             if (!response.ok) {
               const updates = {
                 status: "failed",
@@ -291,8 +291,26 @@ export function DnDFileUploaderProvider({
                     : { ...prevFile, ...updates }
               )
             );
-          }
-        )
+          })
+          .catch((err) => {
+            const msg =
+              err?.message ||
+              String(err) ||
+              "Network error while uploading or parsing.";
+            setFiles((prev) =>
+              prev.map((prevFile) =>
+                prevFile.uid !== attachment.uid
+                  ? prevFile
+                  : {
+                      ...prevFile,
+                      status: "failed",
+                      error: msg.includes("fetch")
+                        ? msg
+                        : `Upload/parse failed: ${msg}`,
+                    }
+              )
+            );
+          })
       );
     }
 

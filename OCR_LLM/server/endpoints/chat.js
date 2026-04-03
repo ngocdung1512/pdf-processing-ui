@@ -163,12 +163,13 @@ function chatEndpoints(app) {
           workspace,
           user,
           newName: truncate(message, 22),
-          onRename: (thread) => {
+          onRename: (renamedThread) => {
+            if (!renamedThread?.slug) return;
             writeResponseChunk(response, {
               action: "rename_thread",
               thread: {
-                slug: thread.slug,
-                name: thread.name,
+                slug: renamedThread.slug,
+                name: renamedThread.name,
               },
             });
           },
