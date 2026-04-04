@@ -88,8 +88,6 @@ export function extractTableData(message) {
         if (cells.length > 0) rows.push(cells);
       });
 
-      console.log("[TableDownloadCard] Strategy A (HTML table) rows:", rows);
-
       if (rows.length >= 2 && rows[0].length >= 2) return rows;
     }
   }
@@ -103,7 +101,6 @@ export function extractTableData(message) {
       if (!rawText.includes(",")) continue;
 
       const rows = parseCSVText(rawText);
-      console.log("[TableDownloadCard] Strategy B (pre block) rows:", rows);
 
       if (rows.length >= 2 && rows[0].length >= 2) {
         // Verify columns are consistent
@@ -122,7 +119,6 @@ export function extractTableData(message) {
     const content = match[1].trim();
     if (!content.includes(",")) continue;
     const rows = parseCSVText(content);
-    console.log("[TableDownloadCard] Strategy C (regex code block) rows:", rows);
     if (rows.length >= 2 && rows[0].length >= 2) return rows;
   }
 
@@ -142,19 +138,15 @@ export function extractTableData(message) {
       )
       .filter((r) => r.length >= 2);
 
-    console.log("[TableDownloadCard] Strategy C (regex md table) rows:", rows);
-
     if (rows.length >= 2) return rows;
   }
 
-  console.log("[TableDownloadCard] No table found in message.");
   return null;
 }
 
 // ─── Download helpers ─────────────────────────────────────────────────────────
 
 function downloadCSV(rows) {
-  console.log("[TableDownloadCard] downloadCSV rows:", rows);
   const content = rows
     .map((row) =>
       row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
@@ -168,7 +160,6 @@ function downloadCSV(rows) {
 }
 
 async function downloadXLSX(rows) {
-  console.log("[TableDownloadCard] downloadXLSX rows:", rows);
   const XLSX = await import("xlsx");
   const ws = XLSX.utils.aoa_to_sheet(rows);
 

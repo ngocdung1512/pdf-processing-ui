@@ -9,6 +9,7 @@
     "build": "vite build && node scripts/postbuild.js",
     "lint:check": "eslint src",
     "lint": "eslint --fix src",
+    "test:manual": "node scripts/manual/extractTableData.test.js && node scripts/manual/isReportContent.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

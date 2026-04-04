@@ -13,6 +13,14 @@ from pathlib import Path
 from typing import List
 import argparse
 
+for _d in Path(__file__).resolve().parents:
+    if (_d / "ocr_app").is_dir() and (_d / "package.json").is_file():
+        _rs = str(_d)
+        if _rs not in sys.path:
+            sys.path.insert(0, _rs)
+        break
+from repo_layout import find_monorepo_root, resolve_yolo_weights
+
 # Try to import PyMuPDF for PDF to image conversion
 try:
     import fitz  # PyMuPDF
@@ -161,7 +169,10 @@ def main():
     parser = argparse.ArgumentParser(description="Detect bounding boxes in PDF using DocLayout YOLO")
     parser.add_argument("pdf_path", type=str, help="Path to PDF file")
     parser.add_argument(
-        "--model", type=str, default="doclayout_yolo_docstructbench_imgsz1024.pt", help="Path to YOLO model file"
+        "--model",
+        type=str,
+        default=None,
+        help="Path to YOLO model file (default: models/doclayout_yolo_docstructbench_imgsz1024.pt)",
     )
     parser.add_argument("--output-dir", type=str, default="yolo_detection_output", help="Output directory")
     parser.add_argument("--imgsz", type=int, default=1024, help="Image size for inference")
@@ -173,24 +184,19 @@ def main():
 
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parent.parent
+    project_root = find_monorepo_root(Path(__file__))
 
     pdf_path = Path(args.pdf_path)
     if not pdf_path.exists():
         print(f"Error: PDF file not found: {pdf_path}")
         sys.exit(1)
 
-    model_arg = Path(args.model)
-    if model_arg.is_absolute():
-        model_path = model_arg
-    else:
-        model_path = model_arg
-        if not model_path.exists():
-            model_path = project_root / model_arg
-    model_path = model_path.resolve()
+    model_path = Path(resolve_yolo_weights(project_root, args.model))
     if not model_path.exists():
         print(f"Error: Model file not found: {model_path}")
-        print(f"Hint: Place the model at: {project_root / 'doclayout_yolo_docstructbench_imgsz1024.pt'}")
+        print(
+            f"Hint: Place the model at: {project_root / 'models' / 'doclayout_yolo_docstructbench_imgsz1024.pt'}"
+        )
         sys.exit(1)
 
     output_dir = Path(args.output_dir)

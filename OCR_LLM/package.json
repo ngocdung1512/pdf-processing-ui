@@ -26,7 +26,7 @@
     "dev:collector": "cd collector && yarn dev",
     "dev:frontend": "cd frontend && yarn dev",
     "dev:all": "npx concurrently \"yarn dev:server\" \"yarn dev:frontend\" \"yarn dev:collector\"",
-    "dev:pdf-extract": "cd ../pdf_processing && python -m uvicorn api.extract_main:app --host 0.0.0.0 --port 8001",
+    "dev:pdf-extract": "cd ../services/pdf_processing && python -m uvicorn api.extract_main:app --host 0.0.0.0 --port 8001",
     "dev:all:with-pdf": "npx concurrently -n server,frontend,collector,pdf -c blue,green,yellow,magenta \"yarn dev:server\" \"yarn dev:frontend\" \"yarn dev:collector\" \"yarn dev:pdf-extract\"",
     "prisma:generate": "cd server && npx prisma generate",
     "prisma:migrate": "cd server && npx prisma migrate dev --name init",

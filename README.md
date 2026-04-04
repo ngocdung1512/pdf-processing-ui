@@ -27,7 +27,11 @@ cd pdf-processing-ui
 
 Sau khi clone, repo đã bao gồm **toàn bộ** (app PDF + **OCR_LLM chatbot** trong thư mục `OCR_LLM`). Không cần clone thêm gì.
 
+**Python services (hybrid LLM + PDF extract bridge)** nằm gọn trong `services/chatbot` và `services/pdf_processing` (cùng repo). Script khởi động (`scripts/startup/*.bat`) đã trỏ vào đó. Nếu sau khi cập nhật bạn còn thư mục rỗng `chatbot/` hoặc `pdf_processing/` ở **ngay dưới root** (chỉ còn `chroma_db` / `.venv` do Windows khóa file), hãy **tắt hết Python/Chroma/uvicorn**, rồi chạy `scripts\startup\cleanup-legacy-service-dirs.bat` hoặc xóa tay hai thư mục đó — bản chính là trong `services\`.
+
 *(Nếu repo dùng Git LFS cho file model `.pt`, cần cài [Git LFS](https://git-lfs.com/) và chạy `git lfs install` trước khi clone.)*
+
+**Cấu trúc thư mục (tóm tắt):** `app/`, `components/`, `public/` — Next.js; ảnh nền `public/background.jpg`; logo / favicon dùng chung **`public/branding/logo.png`**; `cli/` — lệnh mẫu PDF (`auto_process_pdf`, `check_pdf_type`; root vẫn có file `.py` ngắn gọi sang đây); `ocr_app/` — FastAPI **8000** + pipeline PDF; `services/` — hybrid **8010** + PDF extract **8001**; `examples/` — code CLI; `docs/` — hướng dẫn; `scripts/` — OCR subprocess. Weight lớn (`.pt`, `Qwen2.5-VL-3B`) ở **root**. Các file **`package.json`**, **`tsconfig.json`**, **`components.json`** (shadcn) phải ở **root** theo convention công cụ — không gom vào subfolder. Wrapper `start-dev.bat` / `start-chatbot.bat` / `start-dev.ps1` gọi `scripts/startup/`.
 
 ### Bước 2: Chuẩn bị môi trường
 
@@ -78,7 +82,7 @@ Chỉ cần nếu muốn dùng **OCR nâng cao (giữ bố cục)** cho PDF scan
    ```bash
    pip install -e ./DocLayout-YOLO
    ```
-3. Đặt file model `doclayout_yolo_docstructbench_imgsz1024.pt` vào thư mục gốc project (hoặc cấu hình đường dẫn khi chạy).
+3. Đặt file model `doclayout_yolo_docstructbench_imgsz1024.pt` vào `models/` (khuyến nghị) hoặc thư mục gốc project (hoặc truyền đường dẫn khi chạy). VietOCR có thể dùng `models/vgg_transformer.pth`.
 
 Nếu chỉ dùng **OCR cơ bản** hoặc **chỉ PDF văn bản (layout)** có thể bỏ qua bước này.
 
@@ -101,15 +105,15 @@ npm run chatbot:setup
 (Lệnh này cài dependency + Prisma cho server/frontend/collector trong `OCR_LLM`.)  
 *Cần Yarn: `npm install -g yarn` nếu chưa có. Chi tiết: [OCR_LLM/CHATBOT_SETUP.md](./OCR_LLM/CHATBOT_SETUP.md).*
 
-### Bước 7b: (Tuỳ chọn) Môi trường Python cho **pdf_processing** — PDF trong AnythingLLM
+### Bước 7b: (Tuỳ chọn) Môi trường Python cho **PDF extract** — PDF trong AnythingLLM
 
-Khi upload PDF trong chat AnythingLLM, Collector gọi API trích nội dung chạy trong thư mục **`pdf_processing/`** (port **8001**). Có thể:
+Khi upload PDF trong chat AnythingLLM, Collector gọi API trích nội dung chạy trong **`services/pdf_processing/`** (port **8001**). Có thể:
 
-- **Dùng chung `conversion_env`:** sau `pip install -r requirements.txt` ở bước 4, cài thêm dependency đồng bộ với [pdf_processing/requirements.txt](./pdf_processing/requirements.txt) nếu thiếu (ví dụ `chromadb`, `langchain-community`, `lxml`, `bitsandbytes`), **hoặc**
-- **Tạo venv riêng** trong `pdf_processing` (khuyên dùng khi tách phiên bản thư viện):
+- **Dùng chung `conversion_env`:** sau `pip install -r requirements.txt` ở bước 4, cài thêm dependency đồng bộ với [services/pdf_processing/requirements.txt](./services/pdf_processing/requirements.txt) nếu thiếu (ví dụ `chromadb`, `langchain-community`, `lxml`, `bitsandbytes`), **hoặc**
+- **Tạo venv riêng** trong `services/pdf_processing` (khuyên dùng khi tách phiên bản thư viện):
 
 ```powershell
-cd pdf_processing
+cd services\pdf_processing
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install --upgrade pip
@@ -117,7 +121,7 @@ pip install -r requirements.txt
 ```
 
 Cài **DocLayout-YOLO** từ thư mục gốc repo: `pip install -e ./DocLayout-YOLO`.  
-Tải weight YOLO và model **Qwen2.5-VL-3B** theo [pdf_processing/README.md](./pdf_processing/README.md).  
+Tải weight YOLO và model **Qwen2.5-VL-3B** theo [services/pdf_processing/README.md](./services/pdf_processing/README.md).  
 `start-dev.bat` / `start-chatbot-core.bat` sẽ khởi động bridge **8001** nếu Python/script trỏ đúng venv.
 
 ### Bước 8: Chạy ứng dụng
@@ -128,7 +132,7 @@ Tải weight YOLO và model **Qwen2.5-VL-3B** theo [pdf_processing/README.md](./
 ```
 Hoặc double-click file `start-dev.bat`. Script sẽ mở backend (port 8000), frontend (port 3000) và mở trình duyệt.
 
-**Hoặc chạy tay:** trong terminal có `conversion_env`: `uvicorn api:app --port 8000 --reload`; terminal khác: `npm run dev`.
+**Hoặc chạy tay:** trong terminal có `conversion_env`: `uvicorn ocr_app.api:app --port 8000 --reload`; terminal khác: `npm run dev`.
 
 ### Truy cập
 
@@ -141,7 +145,7 @@ Hoặc double-click file `start-dev.bat`. Script sẽ mở backend (port 8000), 
 ## Hướng dẫn nhanh (đã cài xong)
 
 > **Máy mới / clone lần đầu:** Làm theo mục **[Cài đặt từ đầu (sau khi git clone)](#-cài-đặt-từ-đầu-sau-khi-git-clone)** phía trên.  
-> Chi tiết thêm: **[HUONG_DAN_CAI_DAT_MAY_MOI.md](./HUONG_DAN_CAI_DAT_MAY_MOI.md)**.
+> Chi tiết thêm: **[HUONG_DAN_CAI_DAT_MAY_MOI.md](./docs/HUONG_DAN_CAI_DAT_MAY_MOI.md)**.
 
 ### ⚡ Quick Start (đã cài xong)
 
@@ -153,7 +157,7 @@ Hoặc double-click file `start-dev.bat`. Script sẽ mở backend (port 8000), 
 
 - **Cài lần đầu:** `npm run chatbot:setup` (từ thư mục gốc).
 - **Chạy:** Bấm "Mở trợ lý chatbot" trên giao diện hoặc mở http://localhost:3002. Chi tiết: [OCR_LLM/CHATBOT_SETUP.md](./OCR_LLM/CHATBOT_SETUP.md).
-- **PDF trong chat:** cần service trích PDF trên **8001** (xem bước 7b và [pdf_processing/README.md](./pdf_processing/README.md) mục AnythingLLM). Kiểm tra: http://127.0.0.1:8001/health
+- **PDF trong chat:** cần service trích PDF trên **8001** (xem bước 7b và [services/pdf_processing/README.md](./services/pdf_processing/README.md) mục AnythingLLM). Kiểm tra: http://127.0.0.1:8001/health
 
 
 

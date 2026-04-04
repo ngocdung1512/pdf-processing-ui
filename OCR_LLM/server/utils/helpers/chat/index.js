@@ -379,6 +379,29 @@ function cannonball({
  *   sources: object[],
  * }} - Array of sources that should be added to window
  */
+
+/**
+ * Wraps extracted document text so multi-file prompts can attribute facts to the right file.
+ * Label comes from metadata only (e.g. title) — no domain-specific column or report-type logic.
+ * @param {string} pageContent
+ * @param {Record<string, unknown>} [metadata]
+ * @returns {string}
+ */
+function wrapPageContentWithSourceFence(pageContent, metadata = {}) {
+  const raw =
+    metadata?.title ||
+    metadata?.name ||
+    metadata?.docSource ||
+    metadata?.url ||
+    "";
+  const label = String(raw || "document")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 500);
+  const body = String(pageContent || "");
+  return `\n\n<<<SOURCE_DOCUMENT:${label}>>>\n\n${body}`;
+}
+
 function fillSourceWindow({
   nDocs = 4, // Number of documents
   searchResults = [], // Sources from similarity search
@@ -445,4 +468,5 @@ module.exports = {
   messageArrayCompressor,
   messageStringCompressor,
   fillSourceWindow,
+  wrapPageContentWithSourceFence,
 };

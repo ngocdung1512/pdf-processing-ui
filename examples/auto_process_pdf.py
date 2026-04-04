@@ -2,6 +2,11 @@ import sys
 import argparse
 from pathlib import Path
 
+_repo_root = Path(__file__).resolve().parent.parent
+_ocr_app = _repo_root / "ocr_app"
+if _ocr_app.is_dir() and str(_ocr_app) not in sys.path:
+    sys.path.insert(0, str(_ocr_app))
+
 try:
     import fitz  # PyMuPDF
 except ImportError:

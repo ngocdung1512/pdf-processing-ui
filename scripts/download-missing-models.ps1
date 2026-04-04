@@ -6,7 +6,9 @@ Set-Location $root
 
 Write-Host "=== 1. VietOCR: vgg_transformer.pth ===" -ForegroundColor Cyan
 $vietocrUrl = "https://vocr.vn/data/vietocr/vgg_transformer.pth"
-$vietocrPath = Join-Path $root "vgg_transformer.pth"
+$modelsDir = Join-Path $root "models"
+if (-not (Test-Path $modelsDir)) { New-Item -ItemType Directory -Path $modelsDir | Out-Null }
+$vietocrPath = Join-Path $modelsDir "vgg_transformer.pth"
 if (Test-Path $vietocrPath) {
     Write-Host "[OK] Already exists: $vietocrPath" -ForegroundColor Green
 } else {

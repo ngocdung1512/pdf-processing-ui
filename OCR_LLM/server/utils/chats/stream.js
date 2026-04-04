@@ -4,6 +4,7 @@ const { WorkspaceChats } = require("../../models/workspaceChats");
 const { WorkspaceParsedFiles } = require("../../models/workspaceParsedFiles");
 const { getVectorDbClass, getLLMProvider } = require("../helpers");
 const { writeResponseChunk } = require("../helpers/chat/responses");
+const { wrapPageContentWithSourceFence } = require("../helpers/chat");
 const { grepAgents } = require("./agents");
 const {
   grepCommand,
@@ -192,7 +193,9 @@ async function streamChatWithWorkspace(
       pinnedDocs.forEach((doc) => {
         const { pageContent, ...metadata } = doc;
         pinnedDocIdentifiers.push(sourceIdentifier(doc));
-        contextTexts.push(doc.pageContent);
+        contextTexts.push(
+          wrapPageContentWithSourceFence(pageContent, metadata)
+        );
         sources.push({
           text:
             pageContent.slice(0, 1_000) +
@@ -210,7 +213,7 @@ async function streamChatWithWorkspace(
   );
   parsedFiles.forEach((doc) => {
     const { pageContent, ...metadata } = doc;
-    contextTexts.push(doc.pageContent);
+    contextTexts.push(wrapPageContentWithSourceFence(pageContent, metadata));
     sources.push({
       text:
         pageContent.slice(0, 1_000) + "...continued on in source document...",

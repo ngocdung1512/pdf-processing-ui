@@ -8,7 +8,7 @@ export function Header() {
         <Link href="/" className="flex items-center gap-4">
           <div className="relative w-14 h-14">
             <Image
-              src="/images/logo-h-e1-bb-8dc-vi-e1-bb-87n-k-e1-bb-b9-thu-e1-ba-adt-v-c3-a0-c-c3-b4ng-ngh-e1-bb-87-an-ninh-n-c4-83m-2025.png"
+              src="/branding/logo.png"
               alt="Logo Học viện Kỹ thuật và Công nghệ An ninh"
               fill
               className="object-contain"

@@ -37,7 +37,6 @@ export default class PiperTTSClient {
       let timeout = null;
       const handleMessage = (event) => {
         if (event.data.type !== "voices") {
-          console.log("PiperTTSWorker debug event:", event.data);
           return;
         }
         resolve(event.data.voices);
@@ -62,7 +61,6 @@ export default class PiperTTSClient {
       let timeout = null;
       const handleMessage = (event) => {
         if (event.data.type !== "flush") {
-          console.log("PiperTTSWorker debug event:", event.data);
           return;
         }
         resolve(event.data.flushed);
@@ -93,7 +91,6 @@ export default class PiperTTSClient {
         }
 
         if (event.data.type !== "result") {
-          console.log("PiperTTSWorker debug event:", event.data);
           return;
         }
         resolve({

@@ -1,4 +1,45 @@
-from examples.ocr_basic import main
+"""CLI-style PDF→DOCX pipeline (YOLO + VietOCR or Qwen2.5-VL). Run from repo root."""
+from __future__ import annotations
+
+import argparse
+import gc
+import sys
+import threading
+from pathlib import Path
+
+_repo_root = Path(__file__).resolve().parent
+_ocr_app = _repo_root / "ocr_app"
+for _p in (_ocr_app, _repo_root):
+    _s = str(_p)
+    if _s not in sys.path:
+        sys.path.insert(0, _s)
+
+import cv2
+import numpy as np
+import torch
+from PIL import Image
+from docx import Document
+from docx.shared import Pt, Cm
+
+from repo_layout import find_monorepo_root, resolve_vietocr_pth, resolve_yolo_weights
+from yolo_detect import crop_bbox, detect_bboxes, pdf_to_images
+from doclayout_yolo import YOLOv10
+
+try:
+    from vietocr.tool.config import Cfg
+    from vietocr.tool.predictor import Predictor
+
+    VIETOCR_AVAILABLE = True
+except ImportError:
+    VIETOCR_AVAILABLE = False
+
+try:
+    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+    from qwen_vl_utils import process_vision_info
+
+    QWEN_VL_AVAILABLE = True
+except ImportError:
+    QWEN_VL_AVAILABLE = False
 
 
 def get_device() -> str:
@@ -167,7 +208,10 @@ def process_pdf_to_docx(
 ):
     """Complete pipeline: PDF → Single DOCX. OCR engine: 'vietocr' or 'qwen_vl'.
     When ocr_engine=qwen_vl and qwen_per_page=True: one Qwen call per page (no YOLO), fast text-only."""
-    
+
+    _repo = find_monorepo_root(Path(__file__))
+    model_path = resolve_yolo_weights(_repo, model_path)
+
     pdf_path = Path(pdf_path)
     if not pdf_path.exists():
         print(f"Error: PDF file not found: {pdf_path}")
@@ -219,8 +263,7 @@ def process_pdf_to_docx(
                 print("  ⚠️  Qwen2.5-VL not available (transformers, qwen_vl_utils). Falling back to VietOCR if available.")
                 ocr_engine = "vietocr"
             else:
-                _root = Path(__file__).resolve().parent
-                qwen_path = ocr_model_path or str(_root / "Qwen2.5-VL-3B")
+                qwen_path = ocr_model_path or str(_repo / "Qwen2.5-VL-3B")
                 print(f"\n[Step 2] Loading Qwen2.5-VL OCR model from '{qwen_path}'...")
                 qwen_loaded = False
                 try_4bit = use_4bit
@@ -282,9 +325,10 @@ def process_pdf_to_docx(
                 config = Cfg.load_config_from_name('vgg_transformer')
                 config['cnn']['pretrained'] = False
                 config['device'] = f"{device}:0" if device.startswith("cuda") else "cpu"
-                if ocr_weight and Path(ocr_weight).exists():
-                    print(f"  Using local OCR weights: {ocr_weight}")
-                    config['weights'] = str(ocr_weight)
+                local_vgg = resolve_vietocr_pth(_repo, ocr_weight)
+                if local_vgg is not None:
+                    print(f"  Using local OCR weights: {local_vgg}")
+                    config['weights'] = str(local_vgg)
                 else:
                     config['weights'] = 'https://vocr.vn/data/vietocr/vgg_transformer.pth'
                 detector = Predictor(config)
@@ -630,4 +674,38 @@ def process_pdf_to_docx(
     return output_docx
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="PDF to DOCX (YOLO + VietOCR or Qwen2.5-VL)")
+    parser.add_argument("pdf_path", type=str)
+    parser.add_argument("-o", "--output", type=str, default=None)
+    parser.add_argument("--model", type=str, default="doclayout_yolo_docstructbench_imgsz1024.pt")
+    parser.add_argument("--imgsz", type=int, default=1024)
+    parser.add_argument("--conf", type=float, default=0.1)
+    parser.add_argument("--dpi", type=int, default=300)
+    parser.add_argument("--no-ocr", action="store_true")
+    parser.add_argument("--max-pages", type=int, default=None)
+    parser.add_argument("--ocr-weight", type=str, default=None)
+    parser.add_argument("--ocr-engine", type=str, default="vietocr", choices=("vietocr", "qwen_vl"))
+    parser.add_argument("--ocr-model-path", type=str, default=None)
+    parser.add_argument("--use-4bit", action="store_true")
+    parser.add_argument(
+        "--no-qwen-per-page",
+        action="store_true",
+        help="Use YOLO + batched Qwen on boxes instead of one Qwen call per page",
+    )
+    args = parser.parse_args()
+    out = process_pdf_to_docx(
+        args.pdf_path,
+        output_docx=args.output,
+        model_path=args.model,
+        imgsz=args.imgsz,
+        conf=args.conf,
+        dpi=args.dpi,
+        enable_ocr=not args.no_ocr,
+        max_pages=args.max_pages,
+        ocr_weight=args.ocr_weight,
+        ocr_engine=args.ocr_engine,
+        ocr_model_path=args.ocr_model_path,
+        use_4bit=args.use_4bit,
+        qwen_per_page=not args.no_qwen_per_page,
+    )
+    raise SystemExit(0 if out else 1)

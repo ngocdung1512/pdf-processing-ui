@@ -20,7 +20,7 @@ echo.
 
 :loop
 echo [%date% %time%] Starting chatbot service role=%ROLE% port=%PORT% ...
-cd /d "%PROJECT_ROOT%\chatbot"
+cd /d "%PROJECT_ROOT%\services\chatbot"
 set CHATBOT_SERVICE_ROLE=%ROLE%
 set CHATBOT_EMBED_DEVICE=cpu
 if /I "%ROLE%"=="chat" (

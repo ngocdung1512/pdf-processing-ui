@@ -17,7 +17,7 @@ if (-not $envPath) {
 
 # Start backend in new window (ensure it runs in project root)
 Write-Host "Starting Backend (FastAPI) on port 8000..." -ForegroundColor Yellow
-$backendCmd = "Set-Location '$ProjectRoot'; if (Test-Path '$ProjectRoot\conversion_env\Scripts\Activate.ps1') { & '$ProjectRoot\conversion_env\Scripts\Activate.ps1' }; uvicorn api:app --port 8000 --reload"
+$backendCmd = "Set-Location '$ProjectRoot'; if (Test-Path '$ProjectRoot\conversion_env\Scripts\Activate.ps1') { & '$ProjectRoot\conversion_env\Scripts\Activate.ps1' }; uvicorn ocr_app.api:app --port 8000 --reload"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $backendCmd
 
 # Wait a bit for backend to start

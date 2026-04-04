@@ -1,14 +1,15 @@
 @echo off
 REM PDF extract API for AnythingLLM Collector (port 8001).
-REM Uses pdf_processing\.venv python directly — avoids "call activate" CMD quirks.
+REM Uses services\pdf_processing\.venv python directly — avoids "call activate" CMD quirks.
 
 setlocal
 cd /d "%~dp0\..\.."
 set "ROOT=%CD%"
-set "PP=%ROOT%\pdf_processing"
+set "PP=%ROOT%\services\pdf_processing"
+if not exist "%PP%\api\extract_main.py" set "PP=%ROOT%\pdf_processing"
 
 if not exist "%PP%\api\extract_main.py" (
-  echo ERROR: pdf_processing not found at "%PP%"
+  echo ERROR: pdf extract service not found. Expected "%ROOT%\services\pdf_processing" ^(or legacy "%ROOT%\pdf_processing"^).
   exit /b 1
 )
 

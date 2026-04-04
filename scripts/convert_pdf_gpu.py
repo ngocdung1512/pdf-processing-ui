@@ -11,6 +11,7 @@ from pathlib import Path
 # Ensure project root is on path and is cwd so process_pdf_to_docx and its imports (doclayout_yolo, etc.) resolve
 _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root))
+sys.path.insert(0, str(_project_root / "ocr_app"))
 try:
     os.chdir(_project_root)
 except Exception:

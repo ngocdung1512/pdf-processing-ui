@@ -1,5 +1,9 @@
-from examples.check_pdf_type import main
+"""CLI entry — implementation in cli/check_pdf_type.py (run from repo root)."""
+import subprocess
+import sys
+from pathlib import Path
 
-
+_REPO = Path(__file__).resolve().parent
 if __name__ == "__main__":
-    main()
+    script = _REPO / "cli" / "check_pdf_type.py"
+    raise SystemExit(subprocess.call([sys.executable, str(script), *sys.argv[1:]], cwd=str(_REPO)))

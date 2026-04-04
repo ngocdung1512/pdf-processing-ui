@@ -3,6 +3,7 @@ const { DocumentManager } = require("../DocumentManager");
 const { WorkspaceChats } = require("../../models/workspaceChats");
 const { getVectorDbClass, getLLMProvider } = require("../helpers");
 const { writeResponseChunk } = require("../helpers/chat/responses");
+const { wrapPageContentWithSourceFence } = require("../helpers/chat");
 const {
   chatPrompt,
   sourceIdentifier,
@@ -329,7 +330,9 @@ async function chatSync({
       pinnedDocs.forEach((doc) => {
         const { pageContent, ...metadata } = doc;
         pinnedDocIdentifiers.push(sourceIdentifier(doc));
-        contextTexts.push(doc.pageContent);
+        contextTexts.push(
+          wrapPageContentWithSourceFence(pageContent, metadata)
+        );
         sources.push({
           text:
             pageContent.slice(0, 1_000) +
@@ -344,8 +347,10 @@ async function chatSync({
   attachments = processedAttachments.imageAttachments;
   parsedAttachments.forEach((doc) => {
     if (doc.pageContent) {
-      contextTexts.push(doc.pageContent);
       const { pageContent, ...metadata } = doc;
+      contextTexts.push(
+        wrapPageContentWithSourceFence(pageContent, metadata)
+      );
       sources.push({
         text:
           pageContent.slice(0, 1_000) + "...continued on in source document...",
@@ -758,7 +763,9 @@ async function streamChat({
       pinnedDocs.forEach((doc) => {
         const { pageContent, ...metadata } = doc;
         pinnedDocIdentifiers.push(sourceIdentifier(doc));
-        contextTexts.push(doc.pageContent);
+        contextTexts.push(
+          wrapPageContentWithSourceFence(pageContent, metadata)
+        );
         sources.push({
           text:
             pageContent.slice(0, 1_000) +
@@ -773,8 +780,10 @@ async function streamChat({
   attachments = processedAttachments.imageAttachments;
   parsedAttachments.forEach((doc) => {
     if (doc.pageContent) {
-      contextTexts.push(doc.pageContent);
       const { pageContent, ...metadata } = doc;
+      contextTexts.push(
+        wrapPageContentWithSourceFence(pageContent, metadata)
+      );
       sources.push({
         text:
           pageContent.slice(0, 1_000) + "...continued on in source document...",

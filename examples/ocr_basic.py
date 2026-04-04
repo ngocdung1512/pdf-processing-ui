@@ -1,20 +1,20 @@
 """
 OCR basic/testing pipeline (example utility, not used by the web app).
+Delegates to repo-root ocr_basic.py so a single implementation is maintained.
 """
 
-# Keep original implementation in this file by importing the root script's functions if needed.
-# This file is intentionally left as a thin wrapper to preserve behavior and avoid duplicating 700+ lines.
-
+import subprocess
+import sys
 from pathlib import Path
-import runpy
 
 
 def main():
-    # Execute the original root-level script as if it were run directly.
-    root_script = Path(__file__).resolve().parent.parent / "ocr_basic.py"
-    runpy.run_path(str(root_script), run_name="__main__")
+    root = Path(__file__).resolve().parent.parent
+    script = root / "ocr_basic.py"
+    raise SystemExit(
+        subprocess.call([sys.executable, str(script)] + sys.argv[1:], cwd=str(root))
+    )
 
 
 if __name__ == "__main__":
     main()
-

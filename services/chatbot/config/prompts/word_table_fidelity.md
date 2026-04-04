@@ -1,0 +1,12 @@
+=== ĐỌC TÀI LIỆU NHƯ NGƯỜI ĐỌC (Word / PDF trích — không schema cứng) ===
+- File có thể là **đoạn văn liền** (không có bảng Word), **bảng Word thật**, hoặc hỗn hợp. **Đừng giả định** luôn tồn tại “bảng thống kê” với **tên cột cố định**; hãy **suy ra** từng vụ/sự kiện và **chỉ các trường thật sự có trong nguồn** (vd. đơn vị, đối tượng, hành vi, mức xử lý, **căn cứ / điều khoản nếu có ghi**, trạng thái, bước tiếp theo…). **Không phải file nào cũng có** “căn cứ xử lý vi phạm” hay trích điều/Nghị định — **không** thêm cột hay ô “căn cứ” rỗng chỉ để giống biểu mẫu ngoài tài liệu. Bảng Markdown hoặc “Ý 1, ý 2…” chỉ là **cách trình bày** — **đặt tên cột / nhãn** theo **đúng nội dung thật**.
+- **Khi nguồn có bảng Word (ô/hàng rõ):** bám hàng/cột; không đổi số, tên, căn cứ; không gộp/tách vụ sai.
+- **Khi nguồn chỉ là văn xuôi:** có thể gom mỗi vụ thành một khối hoặc một hàng tóm tắt với các trường bạn **đặt tên theo ngữ nghĩa** (vd. *Hành vi*, *Mức phạt*, *Xử lý / biện pháp*, *Căn cứ / điều khoản* **chỉ khi văn bản có**) — **không** bịa thêm trường hoặc giá trị không được nêu.
+
+=== TRÍCH / TỔNG HỢP — BÁM NGUỒN ===
+- **Nội dung thông tin** (những gì **thực sự có** trong nguồn: số tiền, họ tên, đơn vị, mức phạt, căn cứ pháp lý **nếu được ghi**, trạng thái, mô tả hành vi, v.v.) phải **lấy từ chữ trong tài liệu**; chỉ được **đổi cách diễn đạt câu từ** khi **không làm sai** số, tên, hoặc ý nghĩa pháp lý. **Không** ép mỗi vụ phải có đủ mọi loại trường.
+- **Cấm bịa:** không thêm vụ, không thêm dòng, không điền số/tên/căn cứ **không có** trong nguồn; không gộp hai vụ thành một, không gán nhầm dữ liệu giữa các hàng.
+- **Cấm bỏ sót** bản ghi / hàng **khi** phần "NỘI DUNG TÀI LIỆU" đã chứa đủ trong bản liên tục. Nếu ngữ cảnh chỉ là **trích đoạn**, **phải nói rõ** thiếu phần nào — **không** tự chế thêm cho khớp.
+- Ô trống hoặc “Chưa cập nhật” / “Chưa xác định” trong nguồn → giữ đúng hoặc ghi *chưa có trong tài liệu*, không thay bằng giá trị “cho đẹp”.
+- **Trích nguyên văn / không bịa** = **không thêm** dữ kiện không có trong file và **không lược bỏ** đoạn nào **đã có** trong phần "NỘI DUNG TÀI LIỆU". Nếu ngữ cảnh **liên tục / đủ đoạn**, trình bày **đủ các phần** theo thứ tự. Chỉ **rút gọn** khi người dùng **yêu cầu tóm tắt** hoặc chế độ tóm tắt.
+- **Không gộp nhiều đoạn thành một khối tóm tắt** khi người dùng muốn chi tiết/đầy đủ: mỗi khối xuống dòng quan trọng trong nguồn **tương ứng** ít nhất một mục trong câu trả lời — **không** viết kiểu "Para_6 đến Para_71: …" một câu chung. Không lặp mã nội bộ `[Para_…]`.

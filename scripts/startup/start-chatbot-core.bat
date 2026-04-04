@@ -10,9 +10,9 @@ echo  AnythingLLM OCR_LLM - Dev Servers
 echo ==========================================
 echo.
 
-REM PDF extract bridge (pdf_processing) — Collector uses PDF_PROCESSING_EXTRACT_URL
+REM PDF extract bridge (services/pdf_processing) — Collector uses PDF_PROCESSING_EXTRACT_URL
 set "PDF_EXTRACT_URL=http://127.0.0.1:8001/integrations/chatbot-extract-pdf"
-echo [1/4] Starting PDF extract bridge pdf_processing on port 8001...
+echo [1/4] Starting PDF extract bridge services\pdf_processing on port 8001...
 start "PDF extract bridge - 8001" cmd /k "call ""%PROJECT_ROOT%\scripts\startup\start-pdf-extract-bridge.bat"""
 
 call "%PROJECT_ROOT%\scripts\startup\wait-pdf-bridge-health.bat"
@@ -25,7 +25,7 @@ REM Window 2: AnythingLLM server (API) on 4101 (must set SERVER_PORT so frontend
 echo [2/4] Starting AnythingLLM server API on port 4101...
 start "AnythingLLM Server - 4101" cmd /k "cd /d ""%PROJECT_ROOT%\OCR_LLM"" && set SERVER_PORT=4101 && set GENERIC_OPEN_AI_MAX_TOKENS=8192 && set OLLAMA_MODEL_TOKEN_LIMIT=16384 && set OLLAMA_PREDICT_TOKENS=8192 && set HYBRID_CHATBOT_TIMEOUT_MS=600000 && set HYBRID_CHATBOT_BASE_URL=http://127.0.0.1:8010 && set HYBRID_CHATBOT_UPLOAD_BASE_URL=http://127.0.0.1:8010 && set HYBRID_CHATBOT_CHAT_BASE_URL=http://127.0.0.1:8010 && yarn dev:server"
 
-REM Window 3: Collector on 8888 (inline URL so chat PDF uses pdf_processing without editing .env)
+REM Window 3: Collector on 8888 (inline URL so chat PDF uses extract bridge without editing .env)
 echo [3/4] Starting document collector on port 8888 - PDF bridge %PDF_EXTRACT_URL%
 REM REQUIRE_BRIDGE=false: if bridge is unavailable, collector falls back to local parser/OCR.
 start "AnythingLLM Collector - 8888" cmd /k "cd /d ""%PROJECT_ROOT%\OCR_LLM"" && set PDF_PROCESSING_EXTRACT_URL=%PDF_EXTRACT_URL% && set PDF_PROCESSING_EXTRACT_REQUIRE_BRIDGE=false && set PDF_PROCESSING_EXTRACT_RETRIES=1 && set PDF_PROCESSING_EXTRACT_RETRY_DELAY_MS=3000 && yarn dev:collector"
@@ -36,7 +36,7 @@ start "AnythingLLM Frontend - 3002" cmd /k "cd /d ""%PROJECT_ROOT%\OCR_LLM"" && 
 
 echo.
 echo AnythingLLM dev servers started - no browser auto-open.
-echo PDF in chat: Collector -^> %PDF_EXTRACT_URL% - ensure Python deps in pdf_processing
+echo PDF in chat: Collector -^> %PDF_EXTRACT_URL% - ensure Python deps in services\pdf_processing
 echo.
 exit /b 0
 

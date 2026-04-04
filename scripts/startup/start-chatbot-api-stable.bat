@@ -39,7 +39,7 @@ if "%PORT8010_BUSY%"=="1" (
 )
 
 echo [%date% %time%] Starting chatbot API on 127.0.0.1:8010 ...
-cd /d "%PROJECT_ROOT%\chatbot"
+cd /d "%PROJECT_ROOT%\services\chatbot"
 set CHATBOT_SERVICE_ROLE=all
 set CHATBOT_LLM_DEVICE=auto
 set CHATBOT_EMBED_DEVICE=cpu

@@ -15,7 +15,7 @@ if exist "conversion_env\Scripts\activate.bat" (
 
 REM Start backend in new window
 echo [1/3] Starting Backend FastAPI on port 8000...
-start "FastAPI Backend - Port 8000" cmd /k "cd /d %CD% && if exist conversion_env\Scripts\activate.bat (call conversion_env\Scripts\activate.bat) && uvicorn api:app --port 8000 --reload"
+start "FastAPI Backend - Port 8000" cmd /k "cd /d %CD% && if exist conversion_env\Scripts\activate.bat (call conversion_env\Scripts\activate.bat) && uvicorn ocr_app.api:app --port 8000 --reload"
 
 REM Wait for backend to initialize
 echo [2/3] Waiting for backend to start...

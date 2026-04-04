@@ -16,21 +16,21 @@ env/
 ENV/
 conversion_env/
 
-# pdf_processing/ source is tracked; heavy assets stay ignored via pdf_processing/.gitignore
+# services/pdf_processing source is tracked; heavy assets stay ignored via services/pdf_processing/.gitignore
 
 # Local models / large data
 DocLayout-YOLO/
 Qwen2.5-VL-3B/
 OCR_LLM/Qwen3-4B/
-models/
+# Large files under models/ (re-include tracked YOLO weight below)
+models/*
 checkpoints/
 uploads/
 test_frame_extracted/
 pdfs_check/
 *.pt
 *.pth
-# Allow the YOLO doclayout model used by this project (tracked in repo)
-!doclayout_yolo_docstructbench_imgsz1024.pt
+!models/doclayout_yolo_docstructbench_imgsz1024.pt
 *.onnx
 
 # Node / Next.js
@@ -91,6 +91,7 @@ output/
 outputs/
 tmp/
 temp/
+compare_ocr_llm_result.txt
 
 # AnythingLLM runtime storage (local)
 OCR_LLM/storage/
@@ -106,3 +107,7 @@ OCR_LLM/Báo cáo*.md
 
 # Personal / local workspace folder (not part of repo)
 Tuấn T07/
+
+# Orphan dirs at repo root after Python services moved under services/ (runtime locks may leave these)
+/chatbot/
+/pdf_processing/

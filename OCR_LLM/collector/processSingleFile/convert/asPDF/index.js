@@ -85,7 +85,7 @@ async function asPdf({
       trashFile(fullFilePath);
       return {
         success: false,
-        reason: `pdf_processing full pipeline failed: ${errDetail}. Start extract service: cd pdf_processing && python -m uvicorn api.extract_main:app --port 8001`,
+        reason: `PDF extract bridge failed: ${errDetail}. Start: cd services/pdf_processing && python -m uvicorn api.extract_main:app --host 0.0.0.0 --port 8001 (or run scripts/startup/start-pdf-extract-bridge.bat from repo root)`,
         documents: [],
       };
     }
