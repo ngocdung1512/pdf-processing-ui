@@ -1,6 +1,7 @@
 import {
   parseFindReplaceFromPrompt,
   parseAllFindReplaceFromPrompt,
+  normalizeTextForFindReplacePrompt,
 } from "./parseFindReplaceFromPrompt";
 
 /**
@@ -14,6 +15,16 @@ function stripThoughtBlocks(text) {
     .replace(/<thinking[\s\S]*?<\/thinking>/gi, "")
     .replace(/<thought[\s\S]*?<\/thought>/gi, "")
     .replace(/<redacted_thinking>[\s\S]*?<\/redacted_thinking>/gi, "");
+}
+
+/** Trim markdown emphasis and wrapping quotes from a label line value */
+function stripLabelValue(raw) {
+  if (!raw) return "";
+  return raw
+    .replace(/\*+/g, "")
+    .replace(/^[`"'“”‘’\s\-•]+|[`"'“”‘’\s]+$/g, "")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 /**
@@ -32,6 +43,9 @@ export function extractFindReplaceFromAssistantReply(text) {
     /thay\s+đổi\s+tên\s*"([^"]+)"\s*thành\s*"([^"]+)"/i,
     /tên\s*"([^"]+)"\s*đã\s+được\s+thay\s+(?:bằng|thành)\s*"([^"]+)"/i,
     /(?:^|[\s(])Chỉ\s+thay\s+đổi\s+tên\s*"([^"]+)"\s*thành\s*"([^"]+)"/i,
+    // từ 'A' thành 'B' / từ "A" thành "B" (common bot confirmations)
+    /từ\s+['\u2018]([^'\u2019\n]+)['\u2019]\s+thành\s+['\u2018]([^'\u2019\n]+)['\u2019]/i,
+    /từ\s+"([^"\n]+)"\s+thành\s+"([^"\n]+)"/i,
   ];
 
   for (const re of patterns) {
@@ -66,6 +80,21 @@ export function extractAllFindReplacePairsFromAssistantReply(text) {
     pairs.push({ find: f, replace: r });
   };
 
+  // "từ 'A' thành 'B'" (global scan — may appear mid-sentence)
+  const tuThanhRes = [
+    /từ\s+['\u2018]([^'\u2019\n]+)['\u2019]\s+thành\s+['\u2018]([^'\u2019\n]+)['\u2019]/gi,
+    /từ\s+"([^"\n]+)"\s+thành\s+"([^"\n]+)"/gi,
+    // 'A' thành 'B' without leading "từ" (min length avoids English contractions)
+    /['\u2018]([^'\u2019\n]{2,})['\u2019]\s+thành\s+['\u2018]([^'\u2019\n]{2,})['\u2019]/g,
+  ];
+  for (const re of tuThanhRes) {
+    let m;
+    const r = new RegExp(re.source, re.flags);
+    while ((m = r.exec(clean)) !== null) {
+      push(m[1], m[2]);
+    }
+  }
+
   const arrowRes = [
     /"([^"]+)"\s*(?:→|->|\u2192)\s*"([^"]+)"/g,
     /\u201c([^\u201d]+)\u201d\s*(?:→|->|\u2192)\s*\u201c([^\u201d]+)\u201d/g,
@@ -76,6 +105,20 @@ export function extractAllFindReplacePairsFromAssistantReply(text) {
     const r = new RegExp(re.source, re.flags);
     while ((m = r.exec(clean)) !== null) {
       push(m[1], m[2]);
+    }
+  }
+
+  // Bot-style: "- **Tên cũ:** …" / "Tên cũ (Old name): …" — allow * / parens before ':'
+  const labelOldNewPairs = [
+    [/Tên\s+cũ[^:\n]*:\s*([^\n]+)/i, /Tên\s+mới[^:\n]*:\s*([^\n]+)/i],
+    [/Người\s+ký\s+cũ[^:\n]*:\s*([^\n]+)/i, /Người\s+ký\s+mới[^:\n]*:\s*([^\n]+)/i],
+    [/Old\s+name[^:\n]*:\s*([^\n]+)/i, /New\s+name[^:\n]*:\s*([^\n]+)/i],
+  ];
+  for (const [reOld, reNew] of labelOldNewPairs) {
+    const mo = clean.match(reOld);
+    const mn = clean.match(reNew);
+    if (mo && mn) {
+      push(stripLabelValue(mo[1]), stripLabelValue(mn[1]));
     }
   }
 
@@ -95,7 +138,9 @@ export function getFindReplacePairsForTemplate(
   pairedUserMessage,
   assistantMessage
 ) {
-  const fromReply = extractAllFindReplacePairsFromAssistantReply(assistantMessage);
+  const fromReply = extractAllFindReplacePairsFromAssistantReply(
+    normalizeTextForFindReplacePrompt(assistantMessage || "")
+  );
   if (fromReply.length > 0) return fromReply;
   return parseAllFindReplaceFromPrompt(pairedUserMessage || "");
 }

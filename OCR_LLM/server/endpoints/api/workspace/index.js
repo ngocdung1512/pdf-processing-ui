@@ -36,7 +36,7 @@ function apiWorkspaceEndpoints(app) {
             openAiPrompt: "Custom prompt for responses",
             queryRefusalResponse: "Custom refusal message",
             chatMode: "chat",
-            topN: 4
+            topN: 15
           }
         }
       }
@@ -898,7 +898,7 @@ function apiWorkspaceEndpoints(app) {
         "application/json": {
           example: {
             query: "What is the meaning of life?",
-            topN: 4,
+            topN: 15,
             scoreThreshold: 0.75
           }
         }
@@ -969,7 +969,7 @@ function apiWorkspaceEndpoints(app) {
 
         const parseTopN = () => {
           let input = Number(topN);
-          if (isNaN(input) || input < 1) return workspace?.topN ?? 4;
+          if (isNaN(input) || input < 1) return workspace?.topN ?? 15;
           return input;
         };
 

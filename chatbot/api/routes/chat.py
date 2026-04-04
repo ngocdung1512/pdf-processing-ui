@@ -30,11 +30,17 @@ _COMPLEX_TASK_REGEX = re.compile(
 
 def _fallback_doc_ids_if_empty(requested: list[str]) -> list[str]:
     """
-    When the client sends [] (e.g. session map lost) but Chroma has exactly one indexed doc,
-    scope to that doc so Word RAG / table answers (and client-side Excel export) still work.
+    When the client sends [] (e.g. no doc_ids in body), pick a sensible default.
+    Prefer the most recently registered doc in the tool registry (insertion order) so
+    multi-upload sessions still answer from the latest file instead of failing or guessing.
     """
     if requested:
         return requested
+    reg = tools.get_all_doc_ids()
+    if len(reg) == 1:
+        return [reg[0]]
+    if len(reg) > 1:
+        return [reg[-1]]
     docs = vector_store.list_documents()
     if len(docs) == 1:
         return [docs[0]["doc_id"]]

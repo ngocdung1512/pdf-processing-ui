@@ -1760,7 +1760,7 @@
                 "openAiPrompt": "Custom prompt for responses",
                 "queryRefusalResponse": "Custom refusal message",
                 "chatMode": "chat",
-                "topN": 4
+                "topN": 15
               }
             }
           }
@@ -2507,7 +2507,7 @@
             "application/json": {
               "example": {
                 "query": "What is the meaning of life?",
-                "topN": 4,
+                "topN": 15,
                 "scoreThreshold": 0.75
               }
             }

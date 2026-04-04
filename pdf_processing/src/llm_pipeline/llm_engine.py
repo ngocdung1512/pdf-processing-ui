@@ -246,10 +246,17 @@ Luôn trả lời bằng tiếng Việt rõ ràng, ngắn gọn."""
     }
 
 
-def generate_raw(prompt: str, max_new_tokens: int = 4096) -> str:
+def generate_raw(
+    prompt: str,
+    max_new_tokens: int = 4096,
+    temperature: float = 0.3,
+    top_p: float = 0.9,
+    do_sample: bool = True,
+) -> str:
     """
     Direct generation without agent (for structured outputs like JSON).
     Used by tools that need specific output formats.
+    Lower temperature / do_sample=False improves faithfulness for RAG answers.
     """
     model, tokenizer = load_model()
     
@@ -267,14 +274,21 @@ def generate_raw(prompt: str, max_new_tokens: int = 4096) -> str:
     
     inputs = tokenizer([text], return_tensors="pt").to(model.device)
     
+    gen_kwargs = {
+        "max_new_tokens": max_new_tokens,
+        "repetition_penalty": 1.1,
+    }
+    if do_sample:
+        gen_kwargs["temperature"] = temperature
+        gen_kwargs["top_p"] = top_p
+        gen_kwargs["do_sample"] = True
+    else:
+        gen_kwargs["do_sample"] = False
+    
     with torch.no_grad():
         generated_ids = model.generate(
             **inputs,
-            max_new_tokens=max_new_tokens,
-            temperature=0.3,
-            top_p=0.9,
-            repetition_penalty=1.1,
-            do_sample=True,
+            **gen_kwargs,
         )
     
     generated_ids_trimmed = generated_ids[0][inputs.input_ids.shape[-1]:]

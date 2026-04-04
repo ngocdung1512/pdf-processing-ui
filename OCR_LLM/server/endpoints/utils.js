@@ -97,7 +97,10 @@ function utilEndpoints(app) {
     async function (request, response) {
       const fs = require("fs");
       try {
-        const { findReplaceInDocxBuffer } = require("../utils/docxFindReplace");
+        const {
+          findReplaceInDocxBuffer,
+          suggestSnippetsForFailedFind,
+        } = require("../utils/docxFindReplace");
         const file = request.file;
         const findRaw = String(request.body?.find ?? "");
         const replace = String(request.body?.replace ?? "");
@@ -105,6 +108,11 @@ function utilEndpoints(app) {
           request.body?.matchCase === "true" || request.body?.matchCase === true;
         const wholeWord =
           request.body?.wholeWord === "true" || request.body?.wholeWord === true;
+        const flexibleWhitespace =
+          request.body?.flexibleWhitespace === "false" ||
+          request.body?.flexibleWhitespace === false
+            ? false
+            : true;
 
         if (!file?.path) {
           return response.status(400).json({
@@ -147,13 +155,16 @@ function utilEndpoints(app) {
         const { buffer: outBuf, count } = findReplaceInDocxBuffer(buf, findRaw, replace, {
           matchCase,
           wholeWord,
+          flexibleWhitespace,
         });
 
         if (count === 0) {
+          const textSnippetsFromFile = suggestSnippetsForFailedFind(buf, findRaw);
           return response.status(422).json({
             success: false,
             error: "No matches found for the search text.",
             count: 0,
+            textSnippetsFromFile,
           });
         }
 
@@ -172,6 +183,131 @@ function utilEndpoints(app) {
       } catch (e) {
         console.error("[docx-find-replace]", e.message);
         return response.status(500).json({ success: false, error: e.message });
+      }
+    }
+  );
+
+  /**
+   * POST /utils/extract-find-replace-pairs
+   * JSON body: { userMessage?, assistantMessage?, documentPlainText? }
+   * Uses the workspace LLM to infer [{ find, replace }] when client heuristics miss.
+   */
+  app.post(
+    "/utils/extract-find-replace-pairs",
+    async function (request, response, next) {
+      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      validatedRequest(request, response, next);
+    },
+    async function (request, response) {
+      try {
+        const { extractFindReplacePairsFromChatLLM } = require("../utils/extractFindReplacePairsLLM");
+        const {
+          userMessage = "",
+          assistantMessage = "",
+          documentPlainText = "",
+          conversationContext = "",
+        } = request.body || {};
+        const pairs = await extractFindReplacePairsFromChatLLM(
+          String(userMessage),
+          String(assistantMessage),
+          String(documentPlainText || ""),
+          String(conversationContext || "")
+        );
+        return response.status(200).json({ success: true, pairs });
+      } catch (e) {
+        console.error("[extract-find-replace-pairs]", e.message);
+        return response.status(500).json({ success: false, error: e.message, pairs: [] });
+      }
+    }
+  );
+
+  /**
+   * POST /utils/docx-template-apply-from-chat
+   * JSON: { templateBase64, pairedUserMessage?, assistantMessage?, conversationContext? }
+   * Runs LLM (with optional multi-turn context + excerpt from file) then applies all replacements
+   * in one pass. Returns the modified .docx binary; X-Replace-Count, X-Replace-Steps headers.
+   */
+  app.post(
+    "/utils/docx-template-apply-from-chat",
+    async function (request, response, next) {
+      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      validatedRequest(request, response, next);
+    },
+    async function (request, response) {
+      try {
+        const { applyDocxTemplateFromChat } = require("../utils/docxTemplateApplyFromChat");
+        const {
+          templateBase64 = "",
+          pairedUserMessage = "",
+          assistantMessage = "",
+          conversationContext = "",
+        } = request.body || {};
+        const raw = String(templateBase64).trim();
+        if (!raw) {
+          return response.status(400).json({
+            success: false,
+            code: "MISSING_TEMPLATE",
+            error: "templateBase64 is required.",
+          });
+        }
+        const b64 = raw.includes(",") ? raw.split(",")[1] : raw;
+        let buf;
+        try {
+          buf = Buffer.from(b64, "base64");
+        } catch {
+          return response.status(400).json({
+            success: false,
+            code: "INVALID_BASE64",
+            error: "Invalid base64 template.",
+          });
+        }
+        if (!buf || buf.length < 100) {
+          return response.status(400).json({
+            success: false,
+            code: "INVALID_TEMPLATE",
+            error: "Template buffer is too small or empty.",
+          });
+        }
+
+        const { buffer: outBuf, totalReplacements, steps } =
+          await applyDocxTemplateFromChat(buf, {
+            pairedUserMessage: String(pairedUserMessage || ""),
+            assistantMessage: String(assistantMessage || ""),
+            conversationContext: String(conversationContext || ""),
+          });
+
+        response.set(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+        response.set("X-Replace-Count", String(totalReplacements));
+        response.set("X-Replace-Steps", String(steps));
+        response.set("Content-Disposition", "attachment; filename=template_patched.docx");
+        return response.status(200).send(outBuf);
+      } catch (e) {
+        if (e.code === "NO_PAIRS") {
+          return response.status(422).json({
+            success: false,
+            code: "NO_PAIRS",
+            error: e.message,
+          });
+        }
+        if (e.code === "NO_MATCH_STEP") {
+          return response.status(422).json({
+            success: false,
+            code: "NO_MATCH_STEP",
+            error: e.message,
+            pairIndex: e.pairIndex,
+            findTried: e.findTried || [],
+            textSnippetsFromFile: e.textSnippetsFromFile || [],
+          });
+        }
+        console.error("[docx-template-apply-from-chat]", e.message);
+        return response.status(500).json({
+          success: false,
+          code: "SERVER_ERROR",
+          error: e.message || "Apply failed",
+        });
       }
     }
   );

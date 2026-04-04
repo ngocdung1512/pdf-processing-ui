@@ -27,6 +27,7 @@ export default function WorkspaceChat({ loading, workspace }) {
         return false;
       }
 
+      setLoadingHistory(true);
       const chatHistory = threadSlug
         ? await Workspace.threads.chatHistory(workspace.slug, threadSlug)
         : await Workspace.chatHistory(workspace.slug);
@@ -35,7 +36,7 @@ export default function WorkspaceChat({ loading, workspace }) {
       setLoadingHistory(false);
     }
     getHistory();
-  }, [workspace, loading]);
+  }, [workspace, loading, threadSlug]);
 
   const hasPendingMessage = !!sessionStorage.getItem(PENDING_HOME_MESSAGE);
   if (loadingHistory) {

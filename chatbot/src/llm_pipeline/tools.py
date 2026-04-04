@@ -4,6 +4,16 @@ LangChain Tools - 3 tools for the Agent.
 1. chat_tool: Q&A + summarize (RAG-based)
 2. compare_tool: Compare two documents 
 3. edit_tool: Modify document content → JSON output → doc surgery → .docx file
+
+RAG neighbor expansion (when not using full-text mode):
+  CHATBOT_RAG_NEIGHBORS — elements each side of each hit (default 1; 0 = off)
+  CHATBOT_RAG_MAX_CONTEXT_ELEMENTS — cap after expansion (default 180)
+
+edit_tool:
+  CHATBOT_EDIT_RAG_TOP_K (default 28), CHATBOT_EDIT_RAG_NEIGHBORS (default 1),
+  CHATBOT_EDIT_RAG_MAX_ELEMENTS (default 60)
+
+Output length (chat_tool): CHATBOT_CHAT_MAX_NEW_TOKENS default 5120 (raise if you need longer drafts).
 """
 import json
 import os
@@ -55,7 +65,16 @@ _BROAD_COVERAGE_QUERY_RE = re.compile(
     r"từ\s*đầu\s*đến\s*cuối|full\s*text|entire\s*document|complete\s*content|"
     r"copy\s*hết|in\s*ra\s*hết|chi\s*tiết\s*từng|không\s*bỏ\s*sót|"
     r"phục\s*hồi\s*nội\s*dung|soạn\s*thảo|dự\s*thảo|viết\s*thành\s*văn\s*bản|"
-    r"\d+\s*trang|khổ\s*a4|mẫu\s*văn\s*bản)",
+    r"\d+\s*trang|khổ\s*a4|mẫu\s*văn\s*bản|"
+    # Report / template-style asks (any PDF; not file-specific)
+    r"báo\s*cáo|khảo\s*sát|viết\s*(lại|ra)?|soạn\s*(bài|văn)?|"
+    r"theo\s*mẫu|mẫu\s*đính\s*kèm|file\s*mẫu|văn\s*bản\s*mẫu|theo\s*file|"
+    r"dựa\s*vào\s*(file|tài\s*liệu|pdf)|"
+    r"(đúng\s*)?cấu\s*trúc|cấu\s*trúc\s*(như|giống|của)|"
+    r"định\s*dạng|văn\s*phong|"
+    r"đầy\s*đủ\s*các\s*phần|các\s*phần\s*như|mọi\s*phần|"
+    r"phỏng\s*theo|tương\s*tự\s*(file|mẫu)|"
+    r"giữ\s*(nguyên\s*)?(bố\s*cục|layout|format))",
     re.IGNORECASE,
 )
 _SUMMARY_INTENT_QUERY_RE = re.compile(
@@ -67,7 +86,9 @@ _SUMMARY_INTENT_QUERY_RE = re.compile(
 _STRONG_DETAIL_HINT_RE = re.compile(
     r"(trình\s*bày\s*chi\s*tiết|đầy\s*đủ\s*nội\s*dung|nguyên\s*văn|"
     r"toàn\s*bộ\s*nội\s*dung|không\s*bỏ\s*sót|liệt\s*kê\s*đầy\s*đủ|"
-    r"soạn\s*thảo|dự\s*thảo|khổ\s*a4|\d+\s*trang)",
+    r"soạn\s*thảo|dự\s*thảo|khổ\s*a4|\d+\s*trang|"
+    r"đúng\s*cấu\s*trúc|theo\s*mẫu|mẫu\s*đính\s*kèm|đầy\s*đủ\s*các\s*phần|"
+    r"viết\s*đầy\s*đủ|báo\s*cáo\s*(đầy\s*đủ|chi\s*tiết)?)",
     re.IGNORECASE,
 )
 # Triggers JSON+repair multi-pass (heavy). Keep narrow so generic "liệt kê / list" stays single-pass.
@@ -192,17 +213,24 @@ def _word_table_fidelity_block() -> str:
 """
 
 
+def _no_fabricated_facts_block() -> str:
+    """Generic anti-placeholder / anti-invented stats for any document (not tied to one PDF)."""
+    return """
+=== HỌ TÊN, CHỮ KÝ, SỐ LIỆU (áp mọi tài liệu) ===
+- **Không** dùng tên giả kiểu mẫu (vd. "Nguyễn Văn A", "ông X", "bà Y", "nhân viên B") trừ khi **đúng nguyên văn** xuất hiện trong phần NỘI DUNG TÀI LIỆU bên dưới.
+- Nếu nguồn chỉ ghi chức danh (vd. "Đội trưởng") mà **không** có họ tên: giữ như nguồn hoặc ghi *không ghi rõ họ tên trong tài liệu* — **không** điền họ tên thật giả định hoặc từ kiến thức chung.
+- Mọi **số %, số tiền, số vụ, năm, tên đơn vị** trong câu trả lời phải **có thể trỏ về** đoạn chữ trong nguồn; không làm tròn, không thay bằng số "đẹp", không thêm thống kê để khớp ý nếu nguồn không có.
+"""
+
+
 def _strict_source_facts_block() -> str:
-    """When CHATBOT_STRICT_SOURCE_FACTS=1, extra tightening (audit-style)."""
-    if str(os.environ.get("CHATBOT_STRICT_SOURCE_FACTS", "")).lower() not in (
-        "1",
-        "true",
-        "yes",
-    ):
+    """Extra tightening (audit-style). On by default; set CHATBOT_STRICT_SOURCE_FACTS=0 to disable."""
+    raw = str(os.environ.get("CHATBOT_STRICT_SOURCE_FACTS", "1")).strip().lower()
+    if raw in ("0", "false", "no", "off"):
         return ""
     return """
-=== SIẾT THÊM (CHATBOT_STRICT_SOURCE_FACTS=1) ===
-- Ưu tiên **trích nguyên văn** các trường nhạy cảm (số tiền, số hiệu văn bản, tên riêng) khi có thể — **không** dùng điều này để **cắt ngắn** câu trả lời; vẫn phải **bao phủ toàn bộ** đoạn có trong ngữ cảnh khi người dùng cần báo cáo / trình bày đầy đủ.
+=== SIẾT THÊM (bám nguồn — CHATBOT_STRICT_SOURCE_FACTS, mặc định bật) ===
+- Ưu tiên **trích nguyên văn** các trường nhạy cảm (số tiền, số hiệu văn bản, tên riêng) khi có thể. Với báo cáo / nhiều mục: **đủ ý và đủ phạm vi** theo nguồn — **không** cố nhân đôi hay lặp lại cùng một ý chỉ để kéo dài bài.
 - Mỗi ô trong bảng trả lời phải **truy về** một phần nguồn tương ứng; nếu không truy được thì ghi *không thấy trong tài liệu đã cung cấp*.
 """
 
@@ -213,11 +241,11 @@ def _depth_scope_instruction(mode: str) -> str:
 Người dùng muốn **TÓM TẮT / TRÌNH BÀY NGẮN**. Hãy trả lời **gọn**, **ưu tiên ý chính**, có thể dùng gạch đầu dòng hoặc vài đoạn ngắn; **không** trích lại toàn văn từng đoạn dài và **không** dựng bảng Markdown đầy đủ từng hàng trừ khi họ hỏi **riêng** về bảng/số liệu. Vẫn **không được bịa**; số, ngày, tên cơ quan then chốt giữ đúng nguồn nếu có."""
     if mode == "detail":
         return """=== ƯU TIÊN ĐỘ DÀI (theo câu hỏi) ===
-Người dùng muốn **CHI TIẾT / ĐẦY ĐỦ**. Trình bày **đủ phạm vi** theo **thứ tự** trong tài liệu, **không bỏ sót** khối nội dung lớn ở giữa khi phần "NỘI DUNG TÀI LIỆU" là bản **liên tục**; bảng → Markdown hoặc **Ý 1, Ý 2…** như mục 7a. Nếu ngữ cảnh chỉ là trích đoạn, nói rõ phần nào có/không có.
-**Không gộp đoạn:** khi nguồn có **nhiều đoạn văn liên tiếp**, **không** tóm gọn thành một đoạn duy nhất hay một khối "Para_6–71" kiểu tóm tắt — hãy **mỗi đoạn nguồn = một đoạn (hoặc một gạch đầu dòng) riêng**, giữ đủ câu chữ có trong nguồn. **Không** dùng nhãn kỹ thuật `[Para_…]` / `[Table_…]` trong câu trả lời.
-Nếu người dùng yêu cầu **soạn thảo/dự thảo theo độ dài** (ví dụ: "4 trang A4"), ưu tiên xuất bản thảo **đủ độ dài mục tiêu** với cấu trúc văn bản hành chính rõ ràng thay vì trả lời ngắn."""
+Người dùng muốn **đủ các phần / đủ cấu trúc** — **không** cần kéo dài quá mức. Trình bày **đủ mục và ý chính** theo **thứ tự** hợp lý trong tài liệu; **tránh lặp ý** và **tránh** dựng thêm đoạn chỉ để “cho dài”. Khi phần "NỘI DUNG TÀI LIỆU" là bản **liên tục**, không bỏ sót **khối mục lớn** (vd. cả một phần I, II…); có thể **gộp gọn** các đoạn phụ trong cùng mục nếu không làm mất số/tên/căn cứ. Bảng → Markdown hoặc **Ý 1, Ý 2…** như mục 7a. Nếu ngữ cảnh chỉ là trích đoạn, nói rõ phần nào có/không có.
+**Không** dùng nhãn kỹ thuật `[Para_…]` / `[Table_…]` trong câu trả lời.
+Chỉ khi người dùng **yêu cầu rõ nguyên văn từng đoạn** hoặc **độ dài cụ thể** (vd. "4 trang A4") mới mở rộng tương ứng; còn lại ưu tiên bài **vừa đủ dùng**."""
     return """=== ƯU TIÊN ĐỘ DÀI (theo câu hỏi) ===
-**Cân đối:** bám đúng độ sâu câu hỏi — không kéo dài dư thừa nếu họ chỉ hỏi một điểm hẹp; cũng không tóm lược quá mức nếu họ hỏi nhiều khía cạnh hoặc yêu cầu cụ thể."""
+**Cân đối:** bám đúng độ sâu câu hỏi — **đủ ý là được**, không kéo dài dư thừa; cũng không tóm lược quá mức nếu họ hỏi nhiều khía cạnh hoặc yêu cầu cụ thể."""
 
 
 def _dedupe_results(results: list[dict]) -> list[dict]:
@@ -302,6 +330,32 @@ def get_all_doc_ids() -> list[str]:
     return list(_doc_registry.keys())
 
 
+def _normalize_request_doc_ids(req_docs: Optional[list]) -> list[str]:
+    """
+    API always sets ContextVar to a list. Empty list means "unspecified" for this request:
+    use the latest registered doc only (avoids chat_tool loading zero docs).
+    None = caller did not set (legacy): use all registered ids.
+    """
+    all_ids = get_all_doc_ids()
+    if req_docs is None:
+        return all_ids
+    if len(req_docs) == 0:
+        return [all_ids[-1]] if all_ids else []
+    return list(req_docs)
+
+
+def _normalize_compare_doc_ids(req_docs: Optional[list]) -> list[str]:
+    """Compare needs two docs: prefer explicit pair, else last two registered."""
+    all_ids = get_all_doc_ids()
+    if req_docs is not None and len(req_docs) >= 2:
+        return list(req_docs[-2:])
+    if req_docs is not None and len(req_docs) == 1 and len(all_ids) >= 2:
+        return all_ids[-2:]
+    if len(all_ids) >= 2:
+        return all_ids[-2:]
+    return list(req_docs) if req_docs else all_ids
+
+
 def _doc_ids_are_pdf_only(doc_ids: list[str]) -> bool:
     """True when every scoped document was uploaded as .pdf (converted to docx internally). Word paths unchanged."""
     if not doc_ids:
@@ -325,10 +379,9 @@ def chat_tool(query: str) -> str:
     Dùng khi hỏi nội dung, tóm tắt, trích xuất, lập bảng/thống kê từ tài liệu.
     Khi trích nhiều trường hợp: cần đủ các bản ghi liên quan trong phạm vi câu hỏi và giữ mỗi hàng nhất quán (cùng một vụ việc)."""
     
-    # Priority: doc_ids from current request > all registered doc_ids
-    req_docs = current_request_doc_ids.get()
-    doc_ids = req_docs if req_docs is not None else get_all_doc_ids()
-    
+    # Priority: explicit request scope (usually one doc or compare-pair from client)
+    doc_ids = _normalize_request_doc_ids(current_request_doc_ids.get())
+
     if not doc_ids:
         return "Chưa có tài liệu nào được chỉ định để trả lời câu hỏi. Vui lòng kiểm tra lại tải lên."
 
@@ -416,9 +469,9 @@ def chat_tool(query: str) -> str:
             top_k_per_doc = min(cap, top_k_per_doc + bump)
         if pdf_only:
             try:
-                pdf_extra = int(os.environ.get("CHATBOT_PDF_RAG_TOPK_EXTRA", "24"))
+                pdf_extra = int(os.environ.get("CHATBOT_PDF_RAG_TOPK_EXTRA", "36"))
             except ValueError:
-                pdf_extra = 24
+                pdf_extra = 36
             top_k_per_doc = min(
                 140 if is_structured_query else 120,
                 top_k_per_doc + max(0, pdf_extra),
@@ -440,7 +493,26 @@ def chat_tool(query: str) -> str:
                     )
                     all_results.extend(kw_results)
         all_results = _dedupe_results(all_results)
-            
+
+        try:
+            _rag_neighbors = int(os.environ.get("CHATBOT_RAG_NEIGHBORS", "1"))
+        except ValueError:
+            _rag_neighbors = 1
+        try:
+            _rag_max_el = int(os.environ.get("CHATBOT_RAG_MAX_CONTEXT_ELEMENTS", "180"))
+        except ValueError:
+            _rag_max_el = 180
+        _rag_neighbors = max(0, _rag_neighbors)
+        _rag_max_el = max(1, _rag_max_el)
+        if _rag_neighbors > 0 and all_results:
+            all_results = vector_store.expand_results_with_neighbors(
+                all_results,
+                neighbor_radius=_rag_neighbors,
+                max_total=_rag_max_el,
+            )
+        else:
+            all_results = all_results[:_rag_max_el]
+
         if not all_results:
             return "Không tìm thấy thông tin liên quan trong tài liệu."
         
@@ -491,19 +563,22 @@ def chat_tool(query: str) -> str:
     scope_block = _depth_scope_instruction(depth_mode)
     fidelity_block = _word_table_fidelity_block()
     strict_block = _strict_source_facts_block()
+    no_fabricated = _no_fabricated_facts_block()
     prompt = f"""Dựa trên nội dung tài liệu dưới đây, hãy trả lời câu hỏi.
 
 {scope_block}
 {fidelity_block}
+{no_fabricated}
 {strict_block}
 Hướng dẫn:
+0m. **Độ dài mặc định:** ưu tiên **đủ cấu trúc và đủ ý chính** (các phần/mục cần có), **không** nhân bản cùng một nội dung và **không** thêm đoạn “cho đẹp” không có trong nguồn. Chỉ trải dài chi tiết khi người dùng yêu cầu rõ (nguyên văn, từng mục riêng, hoặc số trang/độ dài cụ thể).
 0. Nguồn sự thật là các tài liệu trong phần "NỘI DUNG TÀI LIỆU" bên dưới, ưu tiên nội dung từ file Word đã upload trong phiên. Không lấy dữ liệu từ file Excel mẫu, bảng tham khảo ngoài phiên, hay "cho khớp" với mẫu — chỉ căn cứ vào chữ trong tài liệu đã cung cấp.
 0a. **Không bịa:** không thêm số tiền, tên, hành vi, căn cứ, cơ quan, trạng thái vụ việc từ kiến thức chung hoặc suy đoán khi không có trong nội dung Word/tài liệu đã cho. Thiếu thì nói thẳng là không có trong tài liệu.
 0b. Ưu tiên phân tích đúng **nội dung thực tế** trong Word (tên, số tiền, hành vi, trạng thái, căn cứ) cho từng vụ. **Thứ tự dòng hoặc tổng số bản ghi** trong câu trả lời **không** cần trùng file gốc; không được bịa thêm hoặc bỏ sót nội dung có trong nguồn chỉ để “khớp số dòng”.
 1. Chỉ dựa trên nội dung trong phần tài liệu; không bịa thêm dữ liệu không có trong đó.
 2. Bám sát ý định trong câu hỏi (độ chi tiết, dạng bảng hay đoạn văn, số cột, có/không STT). Không mặc định một schema cố định; nếu nguồn có bao nhiêu cột thì bám cấu trúc đó.
 2b. **Diễn đạt linh hoạt**: có thể diễn giải tự nhiên bằng tiếng Việt trong ô/bảng miễn **không đổi nghĩa** và **đúng cột** so với nguồn; không cần copy nguyên văn từng từ trừ khi đó là số tiền, tên riêng, trích dẫn văn bản pháp lý.
-2c. **Bám ý người dùng về phạm vi**: họ có thể diễn đạt theo nhiều cách (tóm tắt, chi tiết, lần lượt, toàn bộ, từng phần, mục nào…). Nếu họ muốn **phạm vi rộng hoặc đầy đủ**, hãy **theo thứ tự trong tài liệu** và **không bỏ sót khối nội dung lớn ở giữa** khi phần "NỘI DUNG TÀI LIỆU" là bản liên tục. Nếu phần ngữ cảnh dưới đây rõ ràng chỉ là **các trích đoạn** (không đủ liên tục), hãy **nói thẳng** là đang thiếu phần giữa và mô tả ngắn phần nào có/không có; gợi ý họ tiếp tục bằng câu hỏi theo **mục/trang/đoạn** cụ thể.
+2c. **Bám ý người dùng về phạm vi**: họ có thể diễn đạt theo nhiều cách (tóm tắt, chi tiết, lần lượt, toàn bộ, từng phần, mục nào…). Nếu họ muốn **phạm vi rộng**, hãy **theo thứ tự** và **có đủ các khối/mục chính** — **có thể diễn giải gọn** trong từng mục thay vì trích dài dòng khi không cần nguyên văn. **Không bỏ sót khối mục lớn** khi ngữ cảnh là bản liên tục. Nếu ngữ cảnh chỉ là **trích đoạn**, **nói thẳng** phần nào có/không có; gợi ý hỏi theo **mục/trang** nếu cần.
 3. Khi trích xuất nhiều trường hợp (danh sách, bảng, thống kê): cố gắng bao phủ toàn bộ trường hợp có trong tài liệu thuộc phạm vi câu hỏi; không bỏ sót trừ khi người dùng giới hạn rõ (ví dụ chỉ một đơn vị).
 4. Mỗi hàng của bảng (mỗi bản ghi): các cột phải cùng mô tả một trường hợp duy nhất như trong nguồn — không gán nhầm dữ liệu giữa các vụ.
 5. Ưu tiên giữ nguyên giá trị gốc cho các trường quan trọng (số tiền, ngày tháng, tên riêng, điều khoản, cơ quan, trạng thái). Nếu không chắc, ghi "chưa rõ trong tài liệu" hoặc giữ nguyên trạng thái mơ hồ của nguồn (ví dụ: "Chưa cập nhật", "Chưa nêu rõ", "Đang xử lý"), tuyệt đối không suy đoán.
@@ -528,9 +603,9 @@ Hướng dẫn:
 === TRẢ LỜI ==="""
     
     try:
-        chat_max_tokens = int(os.environ.get("CHATBOT_CHAT_MAX_NEW_TOKENS", "8192"))
+        chat_max_tokens = int(os.environ.get("CHATBOT_CHAT_MAX_NEW_TOKENS", "5120"))
     except ValueError:
-        chat_max_tokens = 8192
+        chat_max_tokens = 5120
     if depth_mode == "summary":
         try:
             summary_cap = int(os.environ.get("CHATBOT_SUMMARY_MAX_NEW_TOKENS", "3072"))
@@ -538,15 +613,26 @@ Hướng dẫn:
             summary_cap = 3072
         eff_max_tokens = max(512, min(summary_cap, chat_max_tokens))
     else:
+        # Default CHATBOT_CHAT_MAX_NEW_TOKENS lowered to 5120 — raise via env if you need longer drafts
         eff_max_tokens = max(1024, chat_max_tokens)
     print(
         f"[chat_tool] depth_mode={depth_mode} max_new_tokens={eff_max_tokens}",
         flush=True,
     )
+    try:
+        chat_temp = float(os.environ.get("CHATBOT_CHAT_TEMPERATURE", "0.1"))
+    except ValueError:
+        chat_temp = 0.1
+    chat_temp = max(0.0, min(0.6, chat_temp))
+    try:
+        chat_top_p = float(os.environ.get("CHATBOT_CHAT_TOP_P", "0.85"))
+    except ValueError:
+        chat_top_p = 0.85
+    chat_top_p = max(0.5, min(1.0, chat_top_p))
     first_pass = llm_engine.generate_raw(
         prompt,
-        temperature=0.15,
-        top_p=0.85,
+        temperature=chat_temp,
+        top_p=chat_top_p,
         max_new_tokens=eff_max_tokens,
     )
 
@@ -678,13 +764,11 @@ def compare_tool(input_text: str) -> str:
     Dùng tool này khi người dùng yêu cầu so sánh, đối chiếu hai file.
     Input là yêu cầu so sánh của người dùng (ví dụ: 'so sánh giá giữa 2 file')."""
     
-    req_docs = current_request_doc_ids.get()
-    doc_ids = req_docs if req_docs is not None else get_all_doc_ids()
-    
+    doc_ids = _normalize_compare_doc_ids(current_request_doc_ids.get())
+
     if len(doc_ids) < 2:
         return "Cần ít nhất 2 tài liệu để so sánh. Vui lòng kiểm tra lại tải lên."
-    
-    # Get full content of the two most recent documents in the scoped context
+
     doc1_id = doc_ids[-2]
     doc2_id = doc_ids[-1]
     
@@ -730,13 +814,11 @@ def edit_tool(instruction: str) -> str:
     (ví dụ: 'sửa giá thành 50 triệu', 'đổi tên công ty thành ABC').
     Input là yêu cầu sửa đổi cụ thể."""
     
-    req_docs = current_request_doc_ids.get()
-    doc_ids = req_docs if req_docs is not None else get_all_doc_ids()
-    
+    doc_ids = _normalize_request_doc_ids(current_request_doc_ids.get())
+
     if not doc_ids:
         return "Chưa có tài liệu nào được chỉ định để sửa đổi. Vui lòng kiểm tra lại tải lên."
-    
-    # Use the most recently uploaded document in the scoped context
+
     doc_id = doc_ids[-1]
     doc_info = get_doc_info(doc_id)
     
@@ -745,8 +827,34 @@ def edit_tool(instruction: str) -> str:
     
     # Dùng vector_store để tìm các đoạn văn bản liên quan đến yêu cầu sửa đổi
     # Việc này giúp tránh load toàn bộ doc_text gây tràn RAM (OOM) cho GPU
-    results = vector_store.search(instruction, doc_ids=[doc_id], top_k=20)
-    
+    try:
+        _edit_topk = int(os.environ.get("CHATBOT_EDIT_RAG_TOP_K", "28"))
+    except ValueError:
+        _edit_topk = 28
+    try:
+        _edit_nb = int(os.environ.get("CHATBOT_EDIT_RAG_NEIGHBORS", "1"))
+    except ValueError:
+        _edit_nb = 1
+    try:
+        _edit_max = int(os.environ.get("CHATBOT_EDIT_RAG_MAX_ELEMENTS", "60"))
+    except ValueError:
+        _edit_max = 60
+    _edit_topk = max(1, _edit_topk)
+    _edit_nb = max(0, _edit_nb)
+    _edit_max = max(1, _edit_max)
+
+    results = vector_store.search(
+        instruction, doc_ids=[doc_id], top_k=_edit_topk
+    )
+    if _edit_nb > 0 and results:
+        results = vector_store.expand_results_with_neighbors(
+            results,
+            neighbor_radius=_edit_nb,
+            max_total=_edit_max,
+        )
+    else:
+        results = results[:_edit_max]
+
     if not results:
         return "Không tìm thấy phần nội dung nào trong tài liệu khớp với yêu cầu sửa đổi."
         
@@ -829,13 +937,11 @@ def batch_rewrite_tool(instruction: str, context: str) -> str:
     Tham số `context` CẦN chứa toàn bộ thông tin/tổng hợp mà bạn muốn dùng để viết lại.
     Tham số `instruction` là yêu cầu cụ thể (vd: 'Viết lại hợp đồng theo format')."""
     
-    req_docs = current_request_doc_ids.get()
-    doc_ids = req_docs if req_docs is not None else get_all_doc_ids()
-    
+    doc_ids = _normalize_request_doc_ids(current_request_doc_ids.get())
+
     if not doc_ids:
         return "Chưa có tài liệu nào được chỉ định để sửa đổi toàn bộ. Vui lòng kiểm tra lại tải lên."
-    
-    # Lấy tài liệu mới nhất (chính là template format) trong scoped context
+
     doc_id = doc_ids[-1]
     doc_info = get_doc_info(doc_id)
     if not doc_info:

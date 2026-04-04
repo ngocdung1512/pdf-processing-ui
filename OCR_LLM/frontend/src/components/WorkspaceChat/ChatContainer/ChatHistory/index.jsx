@@ -289,6 +289,8 @@ function buildMessages({
           workspace={workspace}
           closed={props.closed}
           pairedUserMessage={pairedUserForReply}
+          chatHistory={history}
+          assistantHistoryIndex={index}
         />
       );
     } else {
@@ -317,6 +319,8 @@ function buildMessages({
           metrics={props.metrics}
           alignmentCls={getMessageAlignment?.(props.role)}
           pairedUserMessage={pairedUserForAssistant}
+          chatHistory={history}
+          assistantHistoryIndex={index}
         />
       );
     }

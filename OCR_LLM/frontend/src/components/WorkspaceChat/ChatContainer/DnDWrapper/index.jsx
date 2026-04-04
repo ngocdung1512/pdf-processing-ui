@@ -10,9 +10,23 @@ import pluralize from "pluralize";
 import {
   CHAT_LAST_DOCX_BASE64_KEY,
   CHAT_LAST_DOCX_NAME_KEY,
+  markChatLastDocxTouched,
 } from "@/utils/docxTemplateStorage";
 
-export const DndUploaderContext = createContext();
+/**
+ * Default when no Provider wraps the tree — avoids destructuring crash.
+ * Real chat always uses DnDFileUploaderProvider above ChatContainer.
+ */
+const defaultDndUploaderContextValue = {
+  files: [],
+  ready: false,
+  dragging: false,
+  setDragging: () => {},
+  onDrop: () => {},
+  parseAttachments: () => [],
+};
+
+export const DndUploaderContext = createContext(defaultDndUploaderContextValue);
 export const REMOVE_ATTACHMENT_EVENT = "ATTACHMENT_REMOVE";
 export const CLEAR_ATTACHMENTS_EVENT = "ATTACHMENT_CLEAR";
 export const PASTE_ATTACHMENT_EVENT = "ATTACHMENT_PASTED";
@@ -309,6 +323,7 @@ export function DnDFileUploaderProvider({
                     CHAT_LAST_DOCX_NAME_KEY,
                     attachment.file.name
                   );
+                  markChatLastDocxTouched();
                 } catch (e) {
                   console.warn("[DnD] CHAT_LAST_DOCX", e);
                 }

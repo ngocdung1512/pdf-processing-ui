@@ -30,6 +30,12 @@ export default function AttachmentManager({ attachments }) {
 /**
  * @param {{attachment: import("../../DnDWrapper").Attachment}}
  */
+function isPdfFile(file) {
+  return String(file?.name || "")
+    .toLowerCase()
+    .endsWith(".pdf");
+}
+
 function AttachmentItem({ attachment }) {
   const { uid, file, status, error, document, type, contentString } =
     attachment;
@@ -58,7 +64,9 @@ function AttachmentItem({ attachment }) {
             {file.name}
           </p>
           <p className="text-theme-attachment-text-secondary text-[10px] leading-[14px] font-medium">
-            Uploading...
+            {isPdfFile(file)
+              ? "Đang trích chữ / OCR trên server…"
+              : "Uploading…"}
           </p>
         </div>
       </div>

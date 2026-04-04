@@ -8,6 +8,7 @@ import NoiDungEditor from "../NoiDungEditor";
 import {
   clearDocxTemplateLocalStorage,
   DOCX_TEMPLATE_STORAGE_CLEARED_EVENT,
+  markDocxTemplateTouched,
 } from "@/utils/docxTemplateStorage";
 
 const DOCX_MIME =
@@ -240,6 +241,7 @@ export default function DocxTemplateButton() {
     localStorage.removeItem("DOCX_TEMPLATE_TAGS");
     if (styles) localStorage.setItem("DOCX_TEMPLATE_STYLES", JSON.stringify(styles));
     else localStorage.removeItem("DOCX_TEMPLATE_STYLES");
+    markDocxTemplateTouched(name);
     setTemplateName(name);
     setMode("noidung");
     storeTemplatePrompt(buildNoiDungPrompt(content));
@@ -333,6 +335,7 @@ export default function DocxTemplateButton() {
     localStorage.removeItem("DOCX_TEMPLATE_TAGS");
     if (styles) localStorage.setItem("DOCX_TEMPLATE_STYLES", JSON.stringify(styles));
     else localStorage.removeItem("DOCX_TEMPLATE_STYLES");
+    markDocxTemplateTouched(name);
     setTemplateName(name);
     setMode("style");
     storeTemplatePrompt(buildStylePrompt(content));

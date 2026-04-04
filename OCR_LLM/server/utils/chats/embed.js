@@ -117,7 +117,7 @@ async function streamChatWithForEmbed(
 
   const { fillSourceWindow } = require("../helpers/chat");
   const filledSources = fillSourceWindow({
-    nDocs: embed.workspace?.topN || 4,
+    nDocs: embed.workspace?.topN || 15,
     searchResults: vectorSearchResults.sources,
     history: rawHistory,
     filterIdentifiers: pinnedDocIdentifiers,

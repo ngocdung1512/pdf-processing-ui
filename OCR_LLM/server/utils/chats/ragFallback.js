@@ -33,7 +33,7 @@ async function appendPermissiveRagIfEmpty({
   }
 
   const safeInput = String(input ?? "").trim() || " ";
-  const topN = Math.max((workspace?.topN || 4) * 3, 16);
+  const topN = Math.max((workspace?.topN || 15) * 3, 16);
 
   const res = await VectorDb.performSimilaritySearch({
     namespace: workspace.slug,

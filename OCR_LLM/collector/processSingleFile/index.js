@@ -87,9 +87,14 @@ async function processSingleFile(targetFilename, options = {}, metadata = {}) {
   const dedupeKey = `${fullFilePath}::${processFileAs}::${options?.parseOnly ? "parse" : "process"}`;
   const ttl = dedupeTtlMs();
   const now = Date.now();
-  const cached = _recentResults.get(dedupeKey);
-  if (cached && now - cached.at <= ttl) return cached.result;
-  if (cached && now - cached.at > ttl) _recentResults.delete(dedupeKey);
+  // Chat "parse only" must not reuse the short TTL cache: same filename in hotdir
+  // would look like "instant accept" without re-running OCR/extract.
+  const skipResultCache = !!options?.parseOnly;
+  if (!skipResultCache) {
+    const cached = _recentResults.get(dedupeKey);
+    if (cached && now - cached.at <= ttl) return cached.result;
+    if (cached && now - cached.at > ttl) _recentResults.delete(dedupeKey);
+  }
 
   if (_inflightJobs.has(dedupeKey)) return await _inflightJobs.get(dedupeKey);
 
@@ -105,7 +110,9 @@ async function processSingleFile(targetFilename, options = {}, metadata = {}) {
   _inflightJobs.set(dedupeKey, job);
   try {
     const result = await job;
-    _recentResults.set(dedupeKey, { at: Date.now(), result });
+    if (!skipResultCache) {
+      _recentResults.set(dedupeKey, { at: Date.now(), result });
+    }
     return result;
   } finally {
     if (_inflightJobs.get(dedupeKey) === job) _inflightJobs.delete(dedupeKey);

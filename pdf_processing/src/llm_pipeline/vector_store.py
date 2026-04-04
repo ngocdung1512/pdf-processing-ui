@@ -6,6 +6,7 @@ Uses BAAI/bge-m3 for multilingual embeddings (Vietnamese + English).
 """
 import chromadb
 from chromadb.utils import embedding_functions
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
@@ -192,6 +193,111 @@ def get_full_document(doc_id: str, collection_name: str = "documents") -> list[d
     
     output.sort(key=sort_key)
     return output
+
+
+def _element_sort_key(item: dict) -> tuple:
+    """Same ordering as get_full_document (reading order)."""
+    eid = item.get("metadata", {}).get("element_id", "")
+    if eid.startswith("Para_"):
+        try:
+            return (0, int(eid.split("_")[1]), -1, -1)
+        except (IndexError, ValueError):
+            return (0, 999, -1, -1)
+    if eid.startswith("Table_"):
+        parts = eid.split("_")
+        try:
+            table_num = int(parts[1])
+            row = int(parts[3]) if len(parts) > 3 else -1
+            col = int(parts[4]) if len(parts) > 4 else -1
+            return (1, table_num, row, col)
+        except (IndexError, ValueError):
+            return (1, 999, -1, -1)
+    return (2, 0, -1, -1)
+
+
+def _reading_order_key(item: dict) -> tuple:
+    meta = item.get("metadata") or {}
+    return (meta.get("doc_id", ""),) + _element_sort_key(item)
+
+
+def expand_results_with_neighbors(
+    results: list[dict],
+    neighbor_radius: int = 1,
+    max_total: int = 120,
+    collection_name: str = "documents",
+) -> list[dict]:
+    """
+    After vector search, add adjacent elements in the same document (reading order)
+    so the LLM sees surrounding paragraphs/tables, not isolated chunks.
+
+    Results are sorted by (doc_id, reading order). Multiple files stay grouped by doc_id.
+    """
+    if not results:
+        return []
+
+    by_doc: dict[str, list[dict]] = defaultdict(list)
+    for r in results:
+        meta = r.get("metadata") or {}
+        doc_id = meta.get("doc_id")
+        if doc_id:
+            by_doc[doc_id].append(r)
+
+    if not by_doc:
+        return results[:max_total]
+
+    expanded_indices: dict[str, set[int]] = defaultdict(set)
+    for doc_id, doc_hits in by_doc.items():
+        elements = get_full_document(doc_id, collection_name)
+        if not elements:
+            continue
+        id_to_idx: dict[str, int] = {}
+        for i, el in enumerate(elements):
+            eid = el.get("metadata", {}).get("element_id")
+            if eid:
+                id_to_idx[eid] = i
+        for r in doc_hits:
+            eid = r.get("metadata", {}).get("element_id")
+            if eid not in id_to_idx:
+                continue
+            i = id_to_idx[eid]
+            for d in range(-neighbor_radius, neighbor_radius + 1):
+                j = i + d
+                if 0 <= j < len(elements):
+                    expanded_indices[doc_id].add(j)
+
+    if not expanded_indices:
+        return results[:max_total]
+
+    doc_order: list[str] = []
+    for r in results:
+        did = (r.get("metadata") or {}).get("doc_id")
+        if did and did not in doc_order:
+            doc_order.append(did)
+    for did in expanded_indices:
+        if did not in doc_order:
+            doc_order.append(did)
+
+    candidates: list[dict] = []
+    seen_chroma: set[str] = set()
+    for doc_id in doc_order:
+        elements = get_full_document(doc_id, collection_name)
+        for j in sorted(expanded_indices.get(doc_id, set())):
+            if j >= len(elements):
+                continue
+            el = elements[j]
+            cid = el.get("id", "")
+            if cid in seen_chroma:
+                continue
+            seen_chroma.add(cid)
+            candidates.append({
+                "id": cid,
+                "content": el.get("content", ""),
+                "metadata": el.get("metadata", {}),
+                "distance": 0.0,
+            })
+
+    candidates.sort(key=_reading_order_key)
+    return candidates[:max_total]
 
 
 def get_document_text(doc_id: str, collection_name: str = "documents") -> str:

@@ -4,8 +4,22 @@ LangChain Tools - 3 tools for the Agent.
 1. chat_tool: Q&A + summarize (RAG-based)
 2. compare_tool: Compare two documents 
 3. edit_tool: Modify document content → JSON output → doc surgery → .docx file
+
+Env (optional, pdf_processing chat RAG):
+  PDF_CHAT_RAG_TOP_K — vector hits before neighbor expansion (default 24)
+  PDF_CHAT_RAG_NEIGHBORS — adjacent elements each side (default 1; 0 = off)
+  PDF_CHAT_RAG_MAX_CONTEXT_ELEMENTS — cap after expansion (default 120)
+  PDF_CHAT_FULL_DOC_MAX_CHARS — if >0 and exactly one doc indexed, use full OCR text
+    when len(text) <= this value instead of RAG (default 120000; 0 = never)
+  PDF_CHAT_GEN_TEMPERATURE — LLM temperature for chat_tool answers (default 0.12)
+
+edit_tool:
+  PDF_EDIT_RAG_TOP_K (default 28), PDF_EDIT_RAG_NEIGHBORS (default 1),
+  PDF_EDIT_RAG_MAX_ELEMENTS (default 60)
+
 """
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +28,20 @@ from langchain_core.tools import tool
 from llm_pipeline import vector_store
 from llm_pipeline import llm_engine
 from llm_pipeline import doc_surgery
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
 
 
 # ─────────────────────────────────────────────────────────────
@@ -80,37 +108,70 @@ def chat_tool(query: str) -> str:
     doc_ids = get_all_doc_ids()
     if not doc_ids:
         return "Chưa có tài liệu nào được upload. Vui lòng upload tài liệu trước."
-    
-    # RAG: search relevant chunks
-    # Giảm top_k xuống 7 (thay vì 15) để giảm lượng context đưa vào LLM, giúp mô hình xử lý nhanh hơn nhiều
-    results = vector_store.search(query, doc_ids=doc_ids, top_k=7)
-    
-    if not results:
-        return "Không tìm thấy thông tin liên quan trong tài liệu."
-    
-    # Build context
-    context_parts = []
-    for r in results:
-        meta = r.get("metadata", {})
-        file_name = meta.get("file_name", "unknown")
-        element_id = meta.get("element_id", "?")
-        content = r.get("content", "")
-        context_parts.append(f"[{file_name} - {element_id}] {content}")
-    
-    context = "\n".join(context_parts)
-    
+
+    top_k = max(1, _int_env("PDF_CHAT_RAG_TOP_K", 24))
+    neighbors = max(0, _int_env("PDF_CHAT_RAG_NEIGHBORS", 1))
+    max_ctx = max(1, _int_env("PDF_CHAT_RAG_MAX_CONTEXT_ELEMENTS", 120))
+    full_max = _int_env("PDF_CHAT_FULL_DOC_MAX_CHARS", 120000)
+    gen_temp = _float_env("PDF_CHAT_GEN_TEMPERATURE", 0.12)
+
+    use_full = (
+        full_max > 0
+        and len(doc_ids) == 1
+    )
+    context_header = "=== NỘI DUNG TÀI LIỆU ==="
+    if use_full:
+        full_text = vector_store.get_document_text(doc_ids[0])
+        if len(full_text) <= full_max:
+            context = full_text
+            context_header = (
+                "=== NỘI DUNG TÀI LIỆU (toàn bộ văn bản đã index, một file) ==="
+            )
+            results = []
+        else:
+            use_full = False
+
+    if not use_full:
+        results = vector_store.search(query, doc_ids=doc_ids, top_k=top_k)
+        if not results:
+            return "Không tìm thấy thông tin liên quan trong tài liệu."
+        if neighbors > 0:
+            results = vector_store.expand_results_with_neighbors(
+                results,
+                neighbor_radius=neighbors,
+                max_total=max_ctx,
+            )
+        else:
+            results = results[:max_ctx]
+
+        context_parts = []
+        for r in results:
+            meta = r.get("metadata", {})
+            file_name = meta.get("file_name", "unknown")
+            element_id = meta.get("element_id", "?")
+            content = r.get("content", "")
+            context_parts.append(f"[{file_name} - {element_id}] {content}")
+        context = "\n".join(context_parts)
+
     prompt = f"""Dựa trên nội dung tài liệu dưới đây, hãy trả lời câu hỏi.
 Chỉ trả lời dựa trên thông tin có trong tài liệu, không bịa thêm.
+Không dùng tên người giả định (ví dụ Nguyễn Văn A). Mọi con số phải khớp văn bản nguồn.
+Ưu tiên đủ ý và đủ cấu trúc (các mục chính), tránh lặp ý và tránh kéo dài không cần thiết trừ khi người dùng yêu cầu chi tiết tối đa.
 
-=== NỘI DUNG TÀI LIỆU ===
+{context_header}
 {context}
 
 === CÂU HỎI ===
 {query}
 
 === TRẢ LỜI ==="""
-    
-    return llm_engine.generate_raw(prompt)
+
+    return llm_engine.generate_raw(
+        prompt,
+        temperature=gen_temp,
+        top_p=0.85,
+        do_sample=gen_temp > 0,
+    )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -186,8 +247,19 @@ def edit_tool(instruction: str) -> str:
     
     # Dùng vector_store để tìm các đoạn văn bản liên quan đến yêu cầu sửa đổi
     # Việc này giúp tránh load toàn bộ doc_text gây tràn RAM (OOM) cho GPU
-    results = vector_store.search(instruction, doc_ids=[doc_id], top_k=20)
-    
+    _etop = max(1, _int_env("PDF_EDIT_RAG_TOP_K", 28))
+    _enb = max(0, _int_env("PDF_EDIT_RAG_NEIGHBORS", 1))
+    _emax = max(1, _int_env("PDF_EDIT_RAG_MAX_ELEMENTS", 60))
+    results = vector_store.search(instruction, doc_ids=[doc_id], top_k=_etop)
+    if _enb > 0 and results:
+        results = vector_store.expand_results_with_neighbors(
+            results,
+            neighbor_radius=_enb,
+            max_total=_emax,
+        )
+    else:
+        results = results[:_emax]
+
     if not results:
         return "Không tìm thấy phần nội dung nào trong tài liệu khớp với yêu cầu sửa đổi."
         

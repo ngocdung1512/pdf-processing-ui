@@ -1,4 +1,22 @@
 /**
+ * Strip HTML / collapse whitespace / drop trailing polite filler so parsers can match.
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalizeTextForFindReplacePrompt(text) {
+  if (!text || typeof text !== "string") return "";
+  let s = text.replace(/<[^>]+>/g, " ");
+  s = s.replace(/&nbsp;/gi, " ");
+  s = s.replace(/&[a-z]+;/gi, " ");
+  s = s.replace(/\s+/g, " ").trim();
+  s = s.replace(
+    /\s+(?:cho tôi|giúp tôi|giùm tôi|dùm tôi|nhé|nha|đi)(\s*[.!…]*)$/i,
+    ""
+  );
+  return s.trim();
+}
+
+/**
  * Extract find/replace from a natural-language prompt (Vietnamese + simple English).
  * Examples that match:
  *   "thay Hoàng Ngọc Dũng thành Vũ Xuân Trường"
@@ -11,14 +29,21 @@
  */
 export function parseFindReplaceFromPrompt(text) {
   if (!text || typeof text !== "string") return null;
-  const t = text.trim();
+  const t = normalizeTextForFindReplacePrompt(text);
   if (!t) return null;
 
   const patterns = [
+    // Anchored first — works after normalize (no HTML / "cho tôi" tail)
+    /^thay\s+tên\s+(.+?)\s+thành\s+(.+)$/is,
+    /^thay\s+(.+?)\s+thành\s+(.+)$/is,
+    /^đổi\s+(.+?)\s+thành\s+(.+)$/is,
+    /^đổi\s+(.+?)\s+sang\s+(.+)$/is,
+    /^thay\s+(.+?)\s+bằng\s+(.+)$/is,
     // "thay tên Hoàng Ngọc Dũng thành Vũ Xuân Thiều" — find is the name, not "tên …"
     /\bthay\s+tên\s+(.+?)\s+thành\s+(.+)/is,
     /\bthay\s+(.+?)\s+thành\s+(.+)/is,
     /\bđổi\s+(.+?)\s+thành\s+(.+)/is,
+    /\bđổi\s+(.+?)\s+sang\s+(.+)/is,
     /\bthay\s+(.+?)\s+bằng\s+(.+)/is,
     /\breplace\s+(.+?)\s+with\s+(.+)/is,
   ];
@@ -55,7 +80,7 @@ function pushPair(pairs, seen, find, replace) {
  */
 export function parseAllFindReplaceFromPrompt(text) {
   if (!text || typeof text !== "string") return [];
-  const t = text.trim();
+  const t = normalizeTextForFindReplacePrompt(text);
   if (!t) return [];
   const pairs = [];
   const seen = new Set();
@@ -63,23 +88,29 @@ export function parseAllFindReplaceFromPrompt(text) {
   const parts = t.split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
   for (const part of parts) {
     let m;
-    if ((m = part.match(/^tên\s+(.+?)\s+thay\s+là\s+(.+)$/is))) {
+    const pn = normalizeTextForFindReplacePrompt(part);
+    if (!pn) continue;
+    if ((m = pn.match(/^tên\s+(.+?)\s+thay\s+là\s+(.+)$/is))) {
       pushPair(pairs, seen, m[1], m[2]);
       continue;
     }
-    if ((m = part.match(/^còn\s+(.+?)\s+thay\s+là\s+(.+)$/is))) {
+    if ((m = pn.match(/^còn\s+(.+?)\s+thay\s+là\s+(.+)$/is))) {
       pushPair(pairs, seen, m[1], m[2]);
       continue;
     }
-    if ((m = part.match(/^đổi\s+(.+?)\s+thành\s+(.+)$/is))) {
+    if ((m = pn.match(/^đổi\s+(.+?)\s+thành\s+(.+)$/is))) {
       pushPair(pairs, seen, m[1], m[2]);
       continue;
     }
-    if ((m = part.match(/^thay\s+(.+?)\s+thành\s+(.+)$/is))) {
+    if ((m = pn.match(/^đổi\s+(.+?)\s+sang\s+(.+)$/is))) {
       pushPair(pairs, seen, m[1], m[2]);
       continue;
     }
-    if ((m = part.match(/^(.+?)\s+thay\s+là\s+(.+)$/is))) {
+    if ((m = pn.match(/^thay\s+(.+?)\s+thành\s+(.+)$/is))) {
+      pushPair(pairs, seen, m[1], m[2]);
+      continue;
+    }
+    if ((m = pn.match(/^(.+?)\s+thay\s+là\s+(.+)$/is))) {
       pushPair(pairs, seen, m[1], m[2]);
       continue;
     }

@@ -145,6 +145,24 @@ function hasPdfLikeDocumentAttachment(attachments = []) {
   );
 }
 
+/**
+ * When hybrid has doc scope, prefer detail mode so chat_tool uses full-text / richer RAG
+ * unless the user clearly asks for a short summary only.
+ */
+function hybridReplyDepth(message, docIds) {
+  const ids = docIds || [];
+  if (!ids.length) return "auto";
+  const m = String(message || "").trim();
+  if (
+    /tóm\s*tắt|tóm\s*lược|ngắn\s*gọn|nêu\s*ý\s*chính|chỉ\s*ý\s*chính|summary|brief|skim|overview/i.test(
+      m
+    )
+  ) {
+    return "auto";
+  }
+  return "detail";
+}
+
 function hasOnlyWordDocumentAttachments(attachments = []) {
   const docs = attachments.filter(isDocumentAttachment);
   if (docs.length === 0) return false;
@@ -243,6 +261,7 @@ async function requestHybridChatbot({
           message,
           session_id: sessionId || "default",
           doc_ids: docIds || [],
+          reply_depth: hybridReplyDepth(message, docIds),
         }),
         signal: controller.signal,
       },

@@ -3,12 +3,61 @@ import { FileDoc, FileArrowDown } from "@phosphor-icons/react";
 import { saveAs } from "file-saver";
 import { API_BASE } from "@/utils/constants";
 import { baseHeaders } from "@/utils/request";
-import {
-  CHAT_LAST_DOCX_BASE64_KEY,
-  CHAT_LAST_DOCX_NAME_KEY,
-} from "@/utils/docxTemplateStorage";
-import { getFindReplacePairsForTemplate } from "@/utils/extractFindReplaceFromAssistantReply";
+import { pickDocxForTemplateExport } from "@/utils/docxTemplateStorage";
+import { resolveFindReplacePairsFlexible } from "@/utils/fetchFindReplacePairsLLM";
+import { applyDocxTemplateFromChat } from "@/utils/applyDocxTemplateFromChat";
+import { buildConversationContextForTemplateExport } from "@/utils/buildConversationContextForDocx";
 import showToast from "@/utils/toast";
+
+/**
+ * When find/replace start with "Công an …" but the .docx only has an address line
+ * like "… tỉnh Hưng Yên …" and "Công an xã …", align on the "tỉnh …" tail.
+ */
+function provinceAdminTailPair(find, replace) {
+  const f = String(find || "").normalize("NFC").trim();
+  const r = String(replace || "").normalize("NFC").trim();
+  const reTinh = /tỉnh\s+/iu;
+  const idxF = f.search(reTinh);
+  const idxR = r.search(reTinh);
+  if (idxF <= 0 || idxR <= 0) return null;
+  const tailF = f.slice(idxF).replace(/\s+/g, " ").trim();
+  const tailR = r.slice(idxR).replace(/\s+/g, " ").trim();
+  if (!tailF || !tailR || tailF === f) return null;
+  return { find: tailF, replace: tailR };
+}
+
+/**
+ * Case variants for find + same replace; then optional "tỉnh …" tail pair(s) with aligned replace.
+ */
+function expandFindReplaceCandidatesForDocx(find, replace) {
+  const rawF = String(find || "").trim();
+  const rawR = String(replace || "").trim();
+  if (!rawF || !rawR) return [];
+  const nF = rawF.normalize("NFC");
+  const nR = rawR.normalize("NFC");
+  const seen = new Set();
+  const out = [];
+  const push = (f, r) => {
+    const ff = String(f).replace(/\s+/g, " ").trim();
+    const rr = String(r).replace(/\s+/g, " ").trim();
+    if (!ff || !rr) return;
+    const k = `${ff}\0${rr}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ find: ff, replace: rr });
+  };
+  for (const f of [nF, nF.toUpperCase(), nF.toLowerCase()]) {
+    push(f, nR);
+  }
+  const tail = provinceAdminTailPair(nF, nR);
+  if (tail) {
+    const { find: tf, replace: tr } = tail;
+    for (const f of [tf, tf.toUpperCase(), tf.toLowerCase()]) {
+      push(f, tr);
+    }
+  }
+  return out;
+}
 
 // ─── Report detection ─────────────────────────────────────────────────────────
 
@@ -690,18 +739,8 @@ async function generateDocx(message) {
   return buildReportBlob(message, tplStyles);
 }
 
-/**
- * Original .docx from last chat upload (session) or library template (localStorage).
- * @returns {{ base64: string, name: string } | null}
- */
 function readStoredOriginalDocx() {
-  const b64 = sessionStorage.getItem(CHAT_LAST_DOCX_BASE64_KEY);
-  const name = sessionStorage.getItem(CHAT_LAST_DOCX_NAME_KEY);
-  if (b64) return { base64: b64, name: name || "document.docx" };
-  const raw = localStorage.getItem("DOCX_TEMPLATE_BINARY");
-  if (!raw) return null;
-  const base64 = raw.includes(",") ? raw.split(",")[1] : raw;
-  return { base64, name: "mau_bao_cao.docx" };
+  return pickDocxForTemplateExport();
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -710,6 +749,8 @@ export default function ReportDownloadCard({
   message,
   role,
   pairedUserMessage = null,
+  chatHistory = null,
+  assistantHistoryIndex = null,
 }) {
   const [loading, setLoading] = useState(false);
   const [loadingTemplate, setLoadingTemplate] = useState(false);
@@ -789,10 +830,42 @@ export default function ReportDownloadCard({
         );
         return;
       }
-      const pairs = getFindReplacePairsForTemplate(pairedUserMessage, message);
+      showToast("Đang xử lý file mẫu theo hội thoại (AI)…", "info");
+      const conversationContext = buildConversationContextForTemplateExport(
+        chatHistory,
+        assistantHistoryIndex
+      );
+
+      try {
+        const { blob, replaceCount, steps } = await applyDocxTemplateFromChat({
+          templateBase64Raw: stored.base64,
+          pairedUserMessage,
+          assistantMessage: message,
+          conversationContext,
+        });
+        const outNameOne = stored.name.replace(/\.docx$/i, "_replaced.docx");
+        saveAs(blob, outNameOne);
+        showToast(
+          `Đã cập nhật file mẫu (${replaceCount} lần thay, ${steps} bước) — ${outNameOne}`,
+          "success"
+        );
+        return;
+      } catch (smartErr) {
+        console.warn(
+          "[ReportDownloadCard/template] one-shot apply fallback to client loop",
+          smartErr
+        );
+      }
+
+      const pairs = await resolveFindReplacePairsFlexible(
+        pairedUserMessage,
+        message,
+        stored.base64,
+        conversationContext
+      );
       if (!pairs.length) {
         showToast(
-          "Không trích được cặp thay thế — trong tin nhắn dùng: thay A thành B, hoặc A thay là B; hoặc để bot liệt kê \"A\" → \"B\" trong phản hồi.",
+          "Không suy ra được cặp thay thế — kiểm tra LLM trên server; hoặc nói rõ chữ trong file cần đổi (vd: thay A thành B).",
           "warning"
         );
         return;
@@ -807,36 +880,69 @@ export default function ReportDownloadCard({
 
       for (let i = 0; i < pairs.length; i++) {
         const { find, replace } = pairs[i];
-        const fd = new FormData();
-        fd.append(
-          "file",
-          new File([currentBlob], baseName, { type: docxType }),
-          baseName
-        );
-        fd.append("find", find);
-        fd.append("replace", replace);
-        fd.append("matchCase", "false");
-        fd.append("wholeWord", "false");
+        const findReplaceVariants = expandFindReplaceCandidatesForDocx(find, replace);
+        let stepOk = false;
+        let last422Msg = "";
+        let snippetHint = null;
+        for (const { find: findTry, replace: replaceTry } of findReplaceVariants) {
+          const fd = new FormData();
+          fd.append(
+            "file",
+            new File([currentBlob], baseName, { type: docxType }),
+            baseName
+          );
+          fd.append("find", findTry);
+          fd.append("replace", replaceTry);
+          fd.append("matchCase", "false");
+          fd.append("wholeWord", "false");
 
-        const res = await fetch(`${API_BASE}/utils/docx-find-replace`, {
-          method: "POST",
-          body: fd,
-          headers: baseHeaders(),
-        });
-        const ct = res.headers.get("content-type") || "";
-        if (!res.ok) {
+          const uploadHeaders = { ...baseHeaders() };
+          if (uploadHeaders.Authorization == null) delete uploadHeaders.Authorization;
+          const res = await fetch(`${API_BASE}/utils/docx-find-replace`, {
+            method: "POST",
+            body: fd,
+            headers: uploadHeaders,
+          });
+          const ct = res.headers.get("content-type") || "";
+          if (res.ok) {
+            currentBlob = await res.blob();
+            totalReplacements += Number(res.headers.get("X-Replace-Count") || 0);
+            stepOk = true;
+            break;
+          }
           if (ct.includes("application/json")) {
             const j = await res.json();
-            const hint =
-              res.status === 422
-                ? ` (không thấy trong file: "${find.length > 60 ? `${find.slice(0, 60)}…` : find}")`
-                : "";
-            throw new Error((j.error || "Request failed") + hint);
+            if (res.status === 422) {
+              last422Msg = j.error || "No matches";
+              if (
+                !snippetHint &&
+                Array.isArray(j.textSnippetsFromFile) &&
+                j.textSnippetsFromFile.length
+              ) {
+                snippetHint = j.textSnippetsFromFile;
+              }
+              continue;
+            }
+            throw new Error(j.error || "Request failed");
           }
           throw new Error((await res.text()) || "Request failed");
         }
-        currentBlob = await res.blob();
-        totalReplacements += Number(res.headers.get("X-Replace-Count") || 0);
+        if (!stepOk) {
+          const triedLabels = findReplaceVariants.map(({ find: x }) =>
+            x.length > 40 ? `${x.slice(0, 40)}…` : x
+          );
+          let hint = ` (không thấy trong file sau khi thử: ${triedLabels.map((x) => `"${x}"`).join(", ")}.)`;
+          if (snippetHint?.length) {
+            const parts = snippetHint.map((s) =>
+              s.length > 100 ? `${s.slice(0, 100)}…` : s
+            );
+            hint += ` Trong file có đoạn gần từ khóa (hãy dùng đúng chữ sau khi copy từ Word): ${parts.map((p) => `«${p}»`).join(" · ")}`;
+          } else {
+            hint +=
+              " Kiểm tra đúng file .docx; mở Word tìm đúng cụm chữ (có thể viết tắt/khác dấu); copy nguyên cụm đó vào chat: thay [dán] thành [mới].";
+          }
+          throw new Error(last422Msg + hint);
+        }
       }
 
       const outName = baseName.replace(/\.docx$/i, "_replaced.docx");
@@ -871,7 +977,7 @@ export default function ReportDownloadCard({
               : subtitle}
           </p>
           <p className="text-[10px] leading-tight text-theme-text-secondary/80 mt-1">
-            DOCX = nội dung chat. &quot;Theo mẫu&quot; = file gốc đã upload / mẫu thư viện; cặp thay thế lấy từ tin bạn gửi (thay A thành B, A thay là B) hoặc từ phản hồi có &quot;A&quot; → &quot;B&quot;.
+            &quot;Theo mẫu&quot; = giữ .docx gốc; AI đọc file + toàn bộ hội thoại gần đây (có thể sửa lại ý), áp dụng một lần trên server; nếu cần sẽ dùng luồng dự phòng. File dùng = bản .docx mới nhất (đính kèm / mẫu).
           </p>
         </div>
         <div className="flex flex-col gap-y-1.5 shrink-0">

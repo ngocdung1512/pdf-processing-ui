@@ -30,6 +30,31 @@
     const AUTO_MESSAGE_FOR_FILES = (fileNames) =>
         `[Tài liệu đã tải lên: ${fileNames.join(', ')}]`;
 
+    /**
+     * Scope /chat doc_ids to the file(s) this turn should use.
+     * Sending every doc_id ever attached mixes old + new file text in chat_tool (wrong answers).
+     * - Just uploaded → only those doc_id(s).
+     * - Text-only follow-up → latest doc in the conversation only.
+     * - Compare-style message → last two docs in the conversation.
+     */
+    function docIdsForChatApi(apiMessage, uploadedThisTurnIds, convDocIds) {
+        const ids = Array.isArray(convDocIds) ? convDocIds : [];
+        const uploaded = Array.isArray(uploadedThisTurnIds) ? uploadedThisTurnIds : [];
+        if (uploaded.length > 0) {
+            return uploaded;
+        }
+        if (ids.length === 0) return [];
+        const m = String(apiMessage || '').toLowerCase();
+        const compareLike =
+            /so\s*s[aá]nh|đối\s*chi[eế]u|\bcompare\b|kh[aá]c\s*nhau\s*gi[ữu]a|hai\s*file|2\s*file|hai\s*t[aà]i\s*li[eệ]u/.test(
+                m
+            );
+        if (compareLike && ids.length >= 2) {
+            return ids.slice(-2);
+        }
+        return [ids[ids.length - 1]];
+    }
+
     // ─── DOM References ──────────────────────────────────────
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
@@ -694,7 +719,7 @@
                 body: JSON.stringify({
                     message: apiMessage,
                     session_id: conv.id,
-                    doc_ids: conv.doc_ids,
+                    doc_ids: docIdsForChatApi(apiMessage, newDocIds, conv.doc_ids),
                 }),
                 signal: abortController.signal,
             });

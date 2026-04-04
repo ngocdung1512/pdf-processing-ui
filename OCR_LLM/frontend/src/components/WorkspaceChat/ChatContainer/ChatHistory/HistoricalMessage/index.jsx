@@ -40,6 +40,8 @@ const HistoricalMessage = ({
   metrics = {},
   alignmentCls = "",
   pairedUserMessage = null,
+  chatHistory = null,
+  assistantHistoryIndex = null,
 }) => {
   const { t } = useTranslation();
   const { isEditing } = useEditMessage({ chatId, role });
@@ -125,6 +127,8 @@ const HistoricalMessage = ({
                 message={message}
                 role={role}
                 pairedUserMessage={pairedUserMessage}
+                chatHistory={chatHistory}
+                assistantHistoryIndex={assistantHistoryIndex}
               />
               {isRefusalMessage && (
                 <Link

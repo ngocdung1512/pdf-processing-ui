@@ -386,7 +386,7 @@ async function chatSync({
 
   const { fillSourceWindow } = require("../helpers/chat");
   const filledSources = fillSourceWindow({
-    nDocs: workspace?.topN || 4,
+    nDocs: workspace?.topN || 15,
     searchResults: vectorSearchResults.sources,
     history: rawHistory,
     filterIdentifiers: pinnedDocIdentifiers,
@@ -816,7 +816,7 @@ async function streamChat({
 
   const { fillSourceWindow } = require("../helpers/chat");
   const filledSources = fillSourceWindow({
-    nDocs: workspace?.topN || 4,
+    nDocs: workspace?.topN || 15,
     searchResults: vectorSearchResults.sources,
     history: rawHistory,
     filterIdentifiers: pinnedDocIdentifiers,

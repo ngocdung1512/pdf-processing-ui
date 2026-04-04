@@ -98,7 +98,7 @@ const memory = {
                   namespace: workspace.slug,
                   input: query,
                   LLMConnector,
-                  topN: workspace?.topN ?? 4,
+                  topN: workspace?.topN ?? 15,
                   rerank: workspace?.vectorSearchMode === "rerank",
                 });
 

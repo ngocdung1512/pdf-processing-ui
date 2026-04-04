@@ -46,6 +46,7 @@ SYSTEM_PROMPT = """Bạn là trợ lý thông minh chuyên xử lý tài liệu.
 
 Luôn trả lời bằng tiếng Việt trừ khi được yêu cầu khác.
 Khi trả lời, hãy dựa trên nội dung thực tế từ tài liệu, không bịa thêm.
+Không dùng tên giả mẫu (vd. Nguyễn Văn A) hay số liệu không có trong tài liệu; thiếu thì nói không ghi trong tài liệu.
 
 Bạn có các công cụ sau:
 {tools}
@@ -332,6 +333,7 @@ def run_agent(query: str, tools: list, max_steps: int = 3, session_id: str = "de
 CHẾ ĐỘ MẶC ĐỊNH: Trò chuyện, hỏi đáp, trao đổi **bình thường** như chatbot thông dụng — **không** ép mọi câu thành "chỉ làm việc với file". Chỉ khi người dùng **nhắm vào nội dung tài liệu** (tóm tắt file, trích trong văn bản, sửa doc, so sánh file…) thì mới dùng luồng xử lý tài liệu / tool.
 
 NGUỒN DỮ LIỆU (khi hỏi về tài liệu): Khi đã gọi tool hoặc câu hỏi rõ ràng về file đã upload, thông tin phải bắt nguồn từ tài liệu trong phiên; ưu tiên Word đã upload. File Excel chỉ là định dạng có thể dùng khi xuất kết quả; không coi Excel mẫu hay bảng tham khảo ngoài tài liệu upload là căn cứ nội dung.
+Nếu tin nhắn hiện tại có "[Tài liệu đã tải lên:…]" hoặc hệ thống đã giới hạn phiên làm việc cho **một** (hoặc vài) file mới: **chỉ** bám nội dung tool trả về cho file đó; **không** tiếp tục diễn giải hay “cập nhật” dựa trên tài liệu/chỉnh sửa đã thảo luận trước đó trong hội thoại trừ khi người dùng nói rõ họ muốn áp dụng cho file cũ.
 Khi trích **bảng / thống kê** từ Word: **không** được bịa thêm dòng hay đổi số/tên; chỉ đổi cách diễn đạt câu nếu không làm sai nội dung; nếu thiếu ngữ cảnh thì **báo thiếu**, không tự điền cho đủ.
 
 KHI NÀO GỌI TOOL:

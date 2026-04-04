@@ -21,6 +21,8 @@ const PromptReply = ({
   workspace,
   sources = [],
   pairedUserMessage = null,
+  chatHistory = null,
+  assistantHistoryIndex = null,
 }) => {
   const assistantBackgroundColor = "bg-theme-bg-chat";
 
@@ -83,6 +85,8 @@ const PromptReply = ({
                   message={reply}
                   role="assistant"
                   pairedUserMessage={pairedUserMessage}
+                  chatHistory={chatHistory}
+                  assistantHistoryIndex={assistantHistoryIndex}
                 />
               </>
             )}

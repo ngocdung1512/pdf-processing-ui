@@ -21,6 +21,7 @@ conversion_env/
 # Local models / large data
 DocLayout-YOLO/
 Qwen2.5-VL-3B/
+OCR_LLM/Qwen3-4B/
 models/
 checkpoints/
 uploads/
@@ -102,3 +103,6 @@ OCR_LLM/Báo cáo*.md
 # Package manager caches
 .npm-cache/
 .pip-cache/
+
+# Personal / local workspace folder (not part of repo)
+Tuấn T07/
