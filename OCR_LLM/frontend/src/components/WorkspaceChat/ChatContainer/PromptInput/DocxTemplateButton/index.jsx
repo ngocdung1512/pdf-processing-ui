@@ -5,8 +5,12 @@ import { API_BASE } from "@/utils/constants";
 import ReportFormat from "@/models/reportFormat";
 import ReportFormatLibrary from "../ReportFormatLibrary";
 import NoiDungEditor from "../NoiDungEditor";
+import Workspace from "@/models/workspace";
+import showToast from "@/utils/toast";
 import {
+  clearChatLastDocxSessionStorage,
   clearDocxTemplateLocalStorage,
+  DOCX_TEMPLATE_ORIGINAL_NAME_KEY,
   DOCX_TEMPLATE_STORAGE_CLEARED_EVENT,
   markDocxTemplateTouched,
 } from "@/utils/docxTemplateStorage";
@@ -202,7 +206,7 @@ function storeTemplatePrompt(messageContent) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function DocxTemplateButton() {
+export default function DocxTemplateButton({ workspaceSlug = null }) {
   const inputRef = useRef(null); // kept for potential programmatic use
 
   // Active template badge state
@@ -402,9 +406,42 @@ export default function DocxTemplateButton() {
   }, []);
 
   // ── Clear ──────────────────────────────────────────────────────────────────
+  // Browser template + session docx; server only removes RAG rows matching template filename.
 
-  function clearTemplate() {
+  async function clearTemplate() {
+    const templateFileName =
+      typeof window !== "undefined"
+        ? localStorage.getItem(DOCX_TEMPLATE_ORIGINAL_NAME_KEY) || ""
+        : "";
     clearDocxTemplateLocalStorage();
+    clearChatLastDocxSessionStorage();
+    if (!workspaceSlug) return;
+    const result = await Workspace.clearDocxReportContext(
+      workspaceSlug,
+      templateFileName.trim() || null
+    );
+    if (result.success) {
+      const n = Number(result.removedDocuments) || 0;
+      const p = Number(result.removedParsedFiles) || 0;
+      if (n === 0 && p === 0) {
+        showToast(
+          templateFileName.trim()
+            ? "Đã gỡ mẫu. Không có embed/parse nào trùng tên file mẫu trên server."
+            : "Đã gỡ mẫu (chưa có tên file mẫu để khớp embed trên server).",
+          "info"
+        );
+      } else {
+        showToast(
+          `Đã gỡ mẫu; đã xóa ${n} embed và ${p} file parse trùng tên mẫu.`,
+          "success"
+        );
+      }
+    } else {
+      showToast(
+        result.message || "Không xóa được tài liệu embed trên server.",
+        "error"
+      );
+    }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────

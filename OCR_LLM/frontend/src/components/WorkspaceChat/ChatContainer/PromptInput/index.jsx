@@ -334,7 +334,7 @@ export default function PromptInput({
                   workspaceSlug={workspaceSlug}
                   workspaceThreadSlug={threadSlug}
                 />
-                <DocxTemplateButton />
+                <DocxTemplateButton workspaceSlug={workspaceSlug} />
                 <SlashCommandsButton
                   showing={showSlashCommand}
                   setShowSlashCommand={setShowSlashCommand}

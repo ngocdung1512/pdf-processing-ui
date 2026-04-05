@@ -93,3 +93,14 @@ export function clearDocxTemplateLocalStorage() {
   }
   window.dispatchEvent(new CustomEvent(DOCX_TEMPLATE_STORAGE_CLEARED_EVENT));
 }
+
+/** Clear last chat-attached .docx from session (export / template rivalry). */
+export function clearChatLastDocxSessionStorage() {
+  try {
+    sessionStorage.removeItem(CHAT_LAST_DOCX_BASE64_KEY);
+    sessionStorage.removeItem(CHAT_LAST_DOCX_NAME_KEY);
+    sessionStorage.removeItem(CHAT_LAST_DOCX_UPDATED_AT_KEY);
+  } catch (e) {
+    console.warn("[clearChatLastDocxSessionStorage]", e);
+  }
+}

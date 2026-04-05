@@ -55,6 +55,35 @@ const Workspace = {
 
     return { workspace, message };
   },
+  /** Remove embedded docs + parsed files whose name matches the template file basename. */
+  clearDocxReportContext: async function (slug, templateFileName = null) {
+    try {
+      const res = await fetch(
+        `${API_BASE}/workspace/${slug}/clear-docx-report-context`,
+        {
+          method: "POST",
+          headers: {
+            ...baseHeaders(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            templateFileName: templateFileName || null,
+          }),
+        }
+      );
+      const text = await res.text();
+      const data = safeJsonParse(text, {});
+      if (!res.ok) {
+        return {
+          success: false,
+          message: data?.message || text || `HTTP ${res.status}`,
+        };
+      }
+      return { success: true, ...data };
+    } catch (e) {
+      return { success: false, message: e?.message || String(e) };
+    }
+  },
   chatHistory: async function (slug) {
     const history = await fetch(`${API_BASE}/workspace/${slug}/chats`, {
       method: "GET",

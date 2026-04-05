@@ -350,6 +350,8 @@ export default function ChatContainer({ workspace, knownHistory = [] }) {
                 sendCommand={sendCommand}
                 attachments={files}
                 centered={true}
+                workspaceSlug={workspace?.slug}
+                threadSlug={threadSlug}
               />
               <QuickActions
                 hasAvailableWorkspace={!!workspace}
@@ -400,6 +402,8 @@ export default function ChatContainer({ workspace, knownHistory = [] }) {
               sendCommand={sendCommand}
               attachments={files}
               centered={false}
+              workspaceSlug={workspace?.slug}
+              threadSlug={threadSlug}
             />
           </div>
         </div>

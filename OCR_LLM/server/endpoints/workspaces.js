@@ -32,12 +32,52 @@ const {
 } = require("../utils/files/pfp");
 const { getTTSProvider } = require("../utils/TextToSpeech");
 const { WorkspaceThread } = require("../models/workspaceThread");
+const { WorkspaceParsedFiles } = require("../models/workspaceParsedFiles");
 
 const truncate = require("truncate");
 const { purgeDocument } = require("../utils/files/purgeDocument");
 const { getModelTag } = require("./utils");
 const { searchWorkspaceAndThreads } = require("../utils/helpers/search");
 const { workspaceParsedFilesEndpoints } = require("./workspacesParsedFiles");
+
+function docxTemplateBaseName(templateFileName) {
+  if (!templateFileName || typeof templateFileName !== "string") return "";
+  const t = templateFileName.trim();
+  if (!t) return "";
+  return path.basename(t.replace(/\\/g, "/"));
+}
+
+function workspaceDocumentMatchesTemplateBase(doc, baseLower) {
+  if (!baseLower) return false;
+  const fn = String(doc.filename || "").toLowerCase();
+  if (fn === baseLower) return true;
+  const meta = safeJsonParse(doc.metadata, {});
+  const title = meta?.title;
+  if (title && String(path.basename(String(title))).toLowerCase() === baseLower)
+    return true;
+  const chunkSource = meta?.chunkSource;
+  if (chunkSource) {
+    const s = String(chunkSource);
+    const idx = s.indexOf("://");
+    const rest = idx >= 0 ? s.slice(idx + 3) : s;
+    const tail = path.basename(rest.split("?")[0]).toLowerCase();
+    if (tail === baseLower) return true;
+  }
+  return false;
+}
+
+function parsedFileMatchesTemplateBase(file, baseLower) {
+  if (!baseLower) return false;
+  const fn = String(file.filename || "").toLowerCase();
+  if (fn.startsWith(baseLower + "-") && fn.endsWith(".json")) return true;
+  const meta = safeJsonParse(file.metadata, {});
+  for (const k of ["title", "location", "name"]) {
+    const v = meta?.[k];
+    if (v && String(path.basename(String(v))).toLowerCase() === baseLower)
+      return true;
+  }
+  return false;
+}
 
 function workspaceEndpoints(app) {
   if (!app) return;
@@ -389,6 +429,70 @@ function workspaceEndpoints(app) {
         response.status(200).json({ history: convertToChatHistory(history) });
       } catch (e) {
         console.error(e.message, e);
+        response.sendStatus(500).end();
+      }
+    }
+  );
+
+  /**
+   * Removes embedded docs + parsed chat files that match the active DOCX template
+   * filename (basename match). Body: { templateFileName: string }.
+   */
+  app.post(
+    "/workspace/:slug/clear-docx-report-context",
+    [validatedRequest, flexUserRoleValid([ROLES.all]), validWorkspaceSlug],
+    async (request, response) => {
+      try {
+        const workspace = response.locals.workspace;
+        const user = await userFromSession(request, response);
+        const { templateFileName = null } = reqBody(request) || {};
+        const base = docxTemplateBaseName(
+          templateFileName == null ? "" : String(templateFileName)
+        );
+        const baseLower = base.toLowerCase();
+
+        if (!baseLower) {
+          response.status(200).json({
+            success: true,
+            removedDocuments: 0,
+            removedParsedFiles: 0,
+          });
+          return;
+        }
+
+        const docs = await Document.forWorkspace(workspace.id);
+        const matchingDocs = docs.filter((d) =>
+          workspaceDocumentMatchesTemplateBase(d, baseLower)
+        );
+        const removals = matchingDocs.map((d) => d.docpath).filter(Boolean);
+        if (removals.length > 0) {
+          await Document.removeDocuments(
+            workspace,
+            removals,
+            user?.id ?? null
+          );
+        }
+
+        const parsedList = await WorkspaceParsedFiles.where({
+          workspaceId: workspace.id,
+        });
+        const parsedToRemove = parsedList.filter((f) =>
+          parsedFileMatchesTemplateBase(f, baseLower)
+        );
+        if (parsedToRemove.length > 0) {
+          await WorkspaceParsedFiles.delete({
+            id: { in: parsedToRemove.map((f) => f.id) },
+          });
+        }
+
+        response.status(200).json({
+          success: true,
+          removedDocuments: removals.length,
+          removedParsedFiles: parsedToRemove.length,
+          matchedBaseName: base,
+        });
+      } catch (e) {
+        console.error(e);
         response.sendStatus(500).end();
       }
     }
