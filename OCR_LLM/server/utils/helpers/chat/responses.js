@@ -220,7 +220,15 @@ function safeJSONStringify(obj) {
 }
 
 function writeResponseChunk(response, data) {
-  response.write(`data: ${safeJSONStringify(data)}\n\n`);
+  const payload = { ...data };
+  if (typeof payload.textResponse === "string" && payload.textResponse.length) {
+    // Enforce no-emojis policy at transport layer so model variance cannot leak emojis to UI.
+    payload.textResponse = payload.textResponse
+      .replace(/\p{Extended_Pictographic}/gu, "")
+      .replace(/\uFE0F/gu, "");
+  }
+  response.write(`data: ${safeJSONStringify(payload)}\n\n`);
+  if (typeof response.flush === "function") response.flush();
   return;
 }
 

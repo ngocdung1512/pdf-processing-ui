@@ -8,6 +8,11 @@ import { resolveFindReplacePairsFlexible } from "@/utils/fetchFindReplacePairsLL
 import { applyDocxTemplateFromChat } from "@/utils/applyDocxTemplateFromChat";
 import { buildConversationContextForTemplateExport } from "@/utils/buildConversationContextForDocx";
 import showToast from "@/utils/toast";
+import {
+  stripAssistantThoughtForExport,
+  THOUGHT_REGEX_CLOSE,
+  THOUGHT_REGEX_OPEN,
+} from "../ThoughtContainer";
 
 /**
  * When find/replace start with "Công an …" but the .docx only has an address line
@@ -64,11 +69,10 @@ function expandFindReplaceCandidatesForDocx(find, replace) {
 export function isReportContent(message) {
   if (!message) return false;
 
-  const THOUGHT_OPEN = /(<think|<thinking|<thought)[\s>]/i;
-  const THOUGHT_CLOSE = /(<\/think>|<\/thinking>|<\/thought>)/i;
-  if (THOUGHT_OPEN.test(message) && !THOUGHT_CLOSE.test(message)) return false;
+  if (THOUGHT_REGEX_OPEN.test(message) && !THOUGHT_REGEX_CLOSE.test(message))
+    return false;
 
-  const clean = message.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const clean = stripAssistantThoughtForExport(message);
 
   const mdHeadings = (clean.match(/^#{1,3}\s+.+/gm) || []).length;
   const boldHeaders = (clean.match(/^\*\*[^*\n]+\*\*:?\s*$/gm) || []).length;
@@ -94,11 +98,10 @@ export function isReportContent(message) {
 export function canExportAssistantMessageToDocx(message) {
   if (!message || typeof message !== "string") return false;
 
-  const THOUGHT_OPEN = /(<think|<thinking|<thought)[\s>]/i;
-  const THOUGHT_CLOSE = /(<\/think>|<\/thinking>|<\/thought>)/i;
-  if (THOUGHT_OPEN.test(message) && !THOUGHT_CLOSE.test(message)) return false;
+  if (THOUGHT_REGEX_OPEN.test(message) && !THOUGHT_REGEX_CLOSE.test(message))
+    return false;
 
-  const clean = message.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const clean = stripAssistantThoughtForExport(message);
   return clean.length > 0;
 }
 
@@ -482,174 +485,6 @@ async function buildReportBlob(message, tplStyles) {
   return Packer.toBlob(doc);
 }
 
-// ─── {noi_dung} marker injection ─────────────────────────────────────────────
-// When the template has a paragraph whose full text is exactly "{noi_dung}",
-// we keep the entire template (header, footer, styles, layout) intact and
-// replace only that paragraph with the AI-generated content paragraphs.
-
-/**
- * Extract top-level block elements (<w:p> paragraphs and <w:tbl> tables)
- * from a <w:body> XML string, maintaining their document order.
- *
- * Table cell paragraphs are NOT extracted separately — the full <w:tbl>
- * element is kept intact so Word renders it as a table.
- * Returns a single XML string of all blocks joined by newlines.
- */
-function extractBodyBlocks(bodyXml) {
-  const blocks = [];
-  const tables = [];
-
-  // Replace table blocks with temporary markers (preserves their XML)
-  const withMarkers = bodyXml.replace(
-    /<w:tbl(?:\s[^>]*)?>[\s\S]*?<\/w:tbl>/g,
-    (match) => {
-      const idx = tables.length;
-      tables.push(match);
-      return `\x00TBL:${idx}\x00`;
-    }
-  );
-
-  // Split on markers; even parts have paragraphs, odd parts are table indices
-  const parts = withMarkers.split(/\x00TBL:(\d+)\x00/);
-  for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 0) {
-      const paraRe = /<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g;
-      let m;
-      while ((m = paraRe.exec(parts[i])) !== null) blocks.push(m[0]);
-    } else {
-      blocks.push(tables[parseInt(parts[i], 10)]);
-    }
-  }
-
-  return blocks.join("\n");
-}
-
-/**
- * Scan document.xml for the paragraph whose concatenated <w:t> text
- * exactly equals `markerText`.
- * Returns { found, paraXml, startIndex, endIndex } — positions in the
- * original docXml string so we can do precise range replacement.
- */
-function findMarkerParagraph(docXml, markerText) {
-  const paraRe = /<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g;
-  let m;
-  while ((m = paraRe.exec(docXml)) !== null) {
-    const tRe = /<w:t(?:[^>]*)?>([^<]*)<\/w:t>/g;
-    const texts = [];
-    let t;
-    while ((t = tRe.exec(m[0])) !== null) texts.push(t[1]);
-    if (texts.join("").trim() === markerText) {
-      return {
-        found: true,
-        paraXml: m[0],
-        startIndex: m.index,
-        endIndex: m.index + m[0].length,
-      };
-    }
-  }
-  return { found: false, paraXml: null, startIndex: -1, endIndex: -1 };
-}
-
-/**
- * Generate a report using the {noi_dung} / {ket_thuc} marker approach.
- *
- * Template structure:
- *   [header paragraphs]   — kept as-is
- *   {noi_dung}            — AI content starts here
- *   [old body paragraphs] — removed (if {ket_thuc} is present)
- *   {ket_thuc}            — AI content ends here; rest is footer/signature
- *   [footer paragraphs]   — kept as-is
- *
- * If only {noi_dung} is present (no {ket_thuc}), the single paragraph is
- * replaced with AI content (backward-compatible behaviour).
- */
-/**
- * Copy table-style definitions that exist in the content DOCX but are missing
- * from the template DOCX.  Without this, injected table XML references style IDs
- * (e.g. "TableGrid") that the template's styles.xml doesn't know about, causing
- * Word to silently drop table borders and formatting.
- */
-function mergeTableStyles(contentZip, templateZip) {
-  try {
-    const contentStylesXml = contentZip.file("word/styles.xml")?.asText() ?? "";
-    const templateStylesEntry = templateZip.file("word/styles.xml");
-    if (!templateStylesEntry) return;
-    let templateStylesXml = templateStylesEntry.asText();
-
-    // Extract every <w:style w:type="table" …> … </w:style> block from content
-    const tableStyleRe = /<w:style\s+[^>]*w:type="table"[^>]*>[\s\S]*?<\/w:style>/g;
-    const contentTableStyles = contentStylesXml.match(tableStyleRe) ?? [];
-
-    let changed = false;
-    for (const block of contentTableStyles) {
-      const idMatch = block.match(/w:styleId="([^"]+)"/);
-      if (!idMatch) continue;
-      if (templateStylesXml.includes(`w:styleId="${idMatch[1]}"`)) continue;
-      // Append before the closing </w:styles> tag
-      templateStylesXml = templateStylesXml.replace("</w:styles>", block + "\n</w:styles>");
-      changed = true;
-    }
-
-    if (changed) templateZip.file("word/styles.xml", templateStylesXml);
-  } catch {
-    // Non-fatal: table will still appear, just without named style formatting
-  }
-}
-
-async function generateReportWithNoiDung(message, templateBase64) {
-  const { default: PizZip } = await import("pizzip");
-
-  // 1. Build AI content paragraphs
-  const contentBlob = await buildReportBlob(message, null);
-  const contentBuffer = await contentBlob.arrayBuffer();
-  const contentZip = new PizZip(contentBuffer);
-  const contentDocXml = contentZip.file("word/document.xml").asText();
-
-  const bodyMatch = contentDocXml.match(/<w:body>([\s\S]*)<\/w:body>/);
-  const contentBodyXml = bodyMatch ? bodyMatch[1] : "";
-  // Extract top-level blocks (paragraphs + tables) in document order.
-  // Must NOT descend into <w:tc> cell paragraphs or we lose table structure.
-  const contentParas = extractBodyBlocks(contentBodyXml);
-
-  // 2. Open template
-  const base64Data = templateBase64.includes(",")
-    ? templateBase64.split(",")[1]
-    : templateBase64;
-  const templateZip = new PizZip(base64Data, { base64: true });
-  let templateDocXml = templateZip.file("word/document.xml").asText();
-
-  // 3. Locate markers
-  const noiDung = findMarkerParagraph(templateDocXml, "{noi_dung}");
-  if (!noiDung.found) {
-    return generateReportFromTemplate(message, templateBase64);
-  }
-
-  const ketThuc = findMarkerParagraph(templateDocXml, "{ket_thuc}");
-
-  if (ketThuc.found && ketThuc.startIndex > noiDung.endIndex) {
-    templateDocXml =
-      templateDocXml.slice(0, noiDung.startIndex) +
-      contentParas +
-      templateDocXml.slice(ketThuc.endIndex);
-  } else {
-    templateDocXml = templateDocXml.replace(noiDung.paraXml, contentParas);
-  }
-
-  // 4. Write document XML back
-  templateZip.file("word/document.xml", templateDocXml);
-
-  // 5. Merge table styles from content DOCX so injected tables render correctly
-  //    even if the template never had a table before.
-  mergeTableStyles(contentZip, templateZip);
-
-  return templateZip.generate({
-    type: "blob",
-    mimeType:
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    compression: "DEFLATE",
-  });
-}
-
 // ─── Template injection ───────────────────────────────────────────────────────
 // Generates the report, then replaces its styles.xml with the template's own
 // styles.xml — so fonts, sizes, colors, spacing all come directly from the
@@ -716,23 +551,24 @@ async function generateReportFromTemplate(message, templateBase64) {
   });
 }
 
-// ─── Main dispatch ────────────────────────────────────────────────────────────
+// ─── Main dispatch (primary "DOCX" button) ────────────────────────────────────
+// Exports **only** the assistant message as Word body text (plus optional style
+// from template). Never merges the full template `document.xml` shell from
+// `{noi_dung}` mode — that kept headers/sections *above* the marker (e.g. whole
+// PC03 report) and looked like "the export added a file". Use **Theo mẫu** for
+// template-based replace / org-specific layout.
 
 async function generateDocx(message) {
   const templateBase64 = localStorage.getItem("DOCX_TEMPLATE_BINARY");
   const templateMode = localStorage.getItem("DOCX_TEMPLATE_MODE") || "style";
 
-  // ── Mode 0: {noi_dung} marker — preserve header & footer, AI fills middle ──
-  if (templateBase64 && templateMode === "noidung") {
-    return generateReportWithNoiDung(message, templateBase64);
-  }
-
-  // ── Mode 1: template binary present → ZIP injection (style swap) ────────────
-  if (templateBase64) {
+  // Style mode: swap styles.xml / theme / sectPr from template; body text is still
+  // only `buildReportBlob(message)` — no pasted template paragraphs.
+  if (templateBase64 && templateMode === "style") {
     return generateReportFromTemplate(message, templateBase64);
   }
 
-  // ── Mode 2: no template → generate from scratch ─────────────────────────────
+  // noidung / no binary / fallback: plain doc from assistant markdown only
   const tplStyles = JSON.parse(
     localStorage.getItem("DOCX_TEMPLATE_STYLES") || "null"
   );
@@ -777,23 +613,19 @@ export default function ReportDownloadCard({
     ? needsProcessing
       ? "Mẫu chưa được xử lý"
       : isNoiDung
-        ? "Mẫu báo cáo"
+        ? "Xuất Word (mẫu {noi_dung} trong thư viện)"
         : "Phát hiện báo cáo"
     : "Xuất Word";
 
   const subtitle = isNoiDung
-    ? "Đã xử lý — tải DOCX theo mẫu {noi_dung}"
+    ? "DOCX: chỉ nội dung phản hồi. Ghép file mẫu (marker / thay thế) → nút « Theo mẫu »"
     : needsProcessing
       ? "Có mẫu style: thử ghép mẫu; nếu lỗi sẽ tải nội dung thuần"
       : looksLikeReport
         ? "Tải xuống dạng Word"
         : "Tải toàn bộ phản hồi dạng .docx";
 
-  const downloadFileName = isNoiDung
-    ? "report_filled.docx"
-    : looksLikeReport
-      ? "report.docx"
-      : "chat_message.docx";
+  const downloadFileName = looksLikeReport ? "report.docx" : "chat_message.docx";
 
   const handleDownload = async () => {
     setLoading(true);

@@ -27,12 +27,16 @@ function chatEndpoints(app) {
     async (request, response) => {
       try {
         const user = await userFromSession(request, response);
-        const { message, attachments = [] } = reqBody(request);
+        const {
+          message,
+          attachments = [],
+          hybridSessionId = null,
+        } = reqBody(request);
         const workspace = response.locals.workspace;
 
         if (typeof message !== "string" || message.trim().length === 0) {
           response.status(400).json({
-            id: uuidv4(),
+            uuid: uuidv4(),
             type: "abort",
             textResponse: null,
             sources: [],
@@ -50,7 +54,7 @@ function chatEndpoints(app) {
 
         if (multiUserMode(response) && !(await User.canSendChat(user))) {
           writeResponseChunk(response, {
-            id: uuidv4(),
+            uuid: uuidv4(),
             type: "abort",
             textResponse: null,
             sources: [],
@@ -67,7 +71,10 @@ function chatEndpoints(app) {
           workspace?.chatMode,
           user,
           null,
-          attachments
+          attachments,
+          hybridSessionId != null && String(hybridSessionId).trim().length > 0
+            ? String(hybridSessionId).trim()
+            : null
         );
         await Telemetry.sendTelemetry("sent_chat", {
           multiUserMode: multiUserMode(response),
@@ -91,7 +98,7 @@ function chatEndpoints(app) {
       } catch (e) {
         console.error(e);
         writeResponseChunk(response, {
-          id: uuidv4(),
+          uuid: uuidv4(),
           type: "abort",
           textResponse: null,
           sources: [],
@@ -113,13 +120,17 @@ function chatEndpoints(app) {
     async (request, response) => {
       try {
         const user = await userFromSession(request, response);
-        const { message, attachments = [] } = reqBody(request);
+        const {
+          message,
+          attachments = [],
+          hybridSessionId = null,
+        } = reqBody(request);
         const workspace = response.locals.workspace;
         const thread = response.locals.thread;
 
         if (typeof message !== "string" || message.trim().length === 0) {
           response.status(400).json({
-            id: uuidv4(),
+            uuid: uuidv4(),
             type: "abort",
             textResponse: null,
             sources: [],
@@ -137,7 +148,7 @@ function chatEndpoints(app) {
 
         if (multiUserMode(response) && !(await User.canSendChat(user))) {
           writeResponseChunk(response, {
-            id: uuidv4(),
+            uuid: uuidv4(),
             type: "abort",
             textResponse: null,
             sources: [],
@@ -154,7 +165,10 @@ function chatEndpoints(app) {
           workspace?.chatMode,
           user,
           thread,
-          attachments
+          attachments,
+          hybridSessionId != null && String(hybridSessionId).trim().length > 0
+            ? String(hybridSessionId).trim()
+            : null
         );
 
         // If thread was renamed emit event to frontend via special `action` response.
@@ -198,7 +212,7 @@ function chatEndpoints(app) {
       } catch (e) {
         console.error(e);
         writeResponseChunk(response, {
-          id: uuidv4(),
+          uuid: uuidv4(),
           type: "abort",
           textResponse: null,
           sources: [],

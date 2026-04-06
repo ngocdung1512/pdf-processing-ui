@@ -379,6 +379,7 @@ class OllamaAILLM {
       response.on("close", handleAbort);
 
       try {
+        let completedWithDoneChunk = false;
         for await (const chunk of stream) {
           if (chunk === undefined)
             throw new Error(
@@ -386,6 +387,7 @@ class OllamaAILLM {
             );
 
           if (chunk.done) {
+            completedWithDoneChunk = true;
             usage.prompt_tokens = chunk.prompt_eval_count;
             usage.completion_tokens = chunk.eval_count;
             usage.duration = chunk.eval_duration / 1e9;
@@ -406,8 +408,8 @@ class OllamaAILLM {
           if (chunk.hasOwnProperty("message")) {
             // As of Ollama v0.9.0+, thinking content comes in a separate property
             // in the response object. If it exists, we need to handle it separately by wrapping it in <think> tags.
-            const content = chunk.message.content;
-            const reasoningToken = chunk.message.thinking;
+            const content = chunk.message?.content ?? "";
+            const reasoningToken = chunk.message?.thinking;
 
             if (reasoningToken) {
               if (reasoningText.length === 0) {
@@ -458,6 +460,33 @@ class OllamaAILLM {
               });
             }
           }
+        }
+
+        if (!completedWithDoneChunk) {
+          if (reasoningText.length > 0) {
+            const endTag = "</redacted_thinking>";
+            writeResponseChunk(response, {
+              uuid,
+              sources,
+              type: "textResponseChunk",
+              textResponse: endTag,
+              close: false,
+              error: false,
+            });
+            fullText += reasoningText + endTag;
+            reasoningText = "";
+          }
+          writeResponseChunk(response, {
+            uuid,
+            sources,
+            type: "textResponseChunk",
+            textResponse: "",
+            close: true,
+            error: false,
+          });
+          response.removeListener("close", handleAbort);
+          stream?.endMeasurement(usage);
+          resolve(fullText);
         }
       } catch (error) {
         writeResponseChunk(response, {

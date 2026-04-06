@@ -654,6 +654,7 @@ function apiWorkspaceEndpoints(app) {
           sessionId = null,
           attachments = [],
           reset = false,
+          hybridSessionId = null,
         } = reqBody(request);
         const workspace = await Workspace.get({ slug: String(slug) });
 
@@ -692,6 +693,10 @@ function apiWorkspaceEndpoints(app) {
           sessionId: !!sessionId ? String(sessionId) : null,
           attachments,
           reset,
+          hybridSessionId:
+            hybridSessionId != null && String(hybridSessionId).trim().length > 0
+              ? String(hybridSessionId).trim()
+              : null,
         });
 
         await Telemetry.sendTelemetry("sent_chat", {
@@ -805,6 +810,7 @@ function apiWorkspaceEndpoints(app) {
           sessionId = null,
           attachments = [],
           reset = false,
+          hybridSessionId = null,
         } = reqBody(request);
         const workspace = await Workspace.get({ slug: String(slug) });
 
@@ -850,6 +856,10 @@ function apiWorkspaceEndpoints(app) {
           sessionId: !!sessionId ? String(sessionId) : null,
           attachments,
           reset,
+          hybridSessionId:
+            hybridSessionId != null && String(hybridSessionId).trim().length > 0
+              ? String(hybridSessionId).trim()
+              : null,
         });
         await Telemetry.sendTelemetry("sent_chat", {
           LLMSelection:

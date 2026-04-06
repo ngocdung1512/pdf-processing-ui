@@ -4,6 +4,22 @@ import { baseHeaders, safeJsonParse } from "@/utils/request";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { v4 } from "uuid";
 
+function getOrCreateThreadHybridSessionId(workspaceSlug, threadSlug) {
+  const ws = String(workspaceSlug || "").trim() || "default";
+  const ts = String(threadSlug || "").trim() || "default";
+  try {
+    const key = `anythingllm-hybrid-session:${ws}:thread:${ts}`;
+    let id = window.sessionStorage.getItem(key);
+    if (!id) {
+      id = v4();
+      window.sessionStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return v4();
+  }
+}
+
 const WorkspaceThread = {
   all: async function (workspaceSlug) {
     const { threads } = await fetch(
@@ -101,14 +117,21 @@ const WorkspaceThread = {
     // The backend response abort handling is done in each LLM's handleStreamResponse.
     window.addEventListener(ABORT_STREAM_EVENT, () => {
       ctrl.abort();
-      handleChat({ id: v4(), type: "stopGeneration" });
+      handleChat({ uuid: v4(), type: "stopGeneration" });
     });
 
     await fetchEventSource(
       `${API_BASE}/workspace/${workspaceSlug}/thread/${threadSlug}/stream-chat`,
       {
         method: "POST",
-        body: JSON.stringify({ message, attachments }),
+        body: JSON.stringify({
+          message,
+          attachments,
+          hybridSessionId: getOrCreateThreadHybridSessionId(
+            workspaceSlug,
+            threadSlug
+          ),
+        }),
         headers: baseHeaders(),
         signal: ctrl.signal,
         openWhenHidden: true,
@@ -121,7 +144,7 @@ const WorkspaceThread = {
             response.status !== 429
           ) {
             handleChat({
-              id: v4(),
+              uuid: v4(),
               type: "abort",
               textResponse: null,
               sources: [],
@@ -132,7 +155,7 @@ const WorkspaceThread = {
             throw new Error("Invalid Status code response.");
           } else {
             handleChat({
-              id: v4(),
+              uuid: v4(),
               type: "abort",
               textResponse: null,
               sources: [],
@@ -149,7 +172,7 @@ const WorkspaceThread = {
         },
         onerror(err) {
           handleChat({
-            id: v4(),
+            uuid: v4(),
             type: "abort",
             textResponse: null,
             sources: [],

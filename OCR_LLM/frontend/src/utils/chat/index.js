@@ -87,7 +87,32 @@ export default function handleChat(
     type === "textResponseChunk" ||
     type === "finalizeResponseStream"
   ) {
-    const chatIdx = _chatHistory.findIndex((chat) => chat.uuid === uuid);
+    const hasStreamUuid = typeof uuid === "string" && uuid.length > 0;
+    let chatIdx = -1;
+
+    if (hasStreamUuid) {
+      for (let i = _chatHistory.length - 1; i >= 0; i--) {
+        const chat = _chatHistory[i];
+        if (chat?.role === "assistant" && chat?.uuid === uuid) {
+          chatIdx = i;
+          break;
+        }
+      }
+    }
+
+    // Some providers/chunks can arrive without uuid. In that case, safely target the
+    // last streaming assistant bubble instead of accidentally matching an old message.
+    if (chatIdx === -1) {
+      for (let i = _chatHistory.length - 1; i >= 0; i--) {
+        const chat = _chatHistory[i];
+        if (chat?.role !== "assistant") continue;
+        if (chat?.pending || chat?.animate || chat?.closed === false) {
+          chatIdx = i;
+          break;
+        }
+      }
+    }
+
     if (chatIdx !== -1) {
       const existingHistory = { ..._chatHistory[chatIdx] };
       let updatedHistory;
@@ -104,7 +129,9 @@ export default function handleChat(
           metrics,
         };
 
-        _chatHistory[chatIdx - 1] = { ..._chatHistory[chatIdx - 1], chatId }; // update prompt with chatID
+        if (chatIdx > 0 && _chatHistory[chatIdx - 1]?.role === "user") {
+          _chatHistory[chatIdx - 1] = { ..._chatHistory[chatIdx - 1], chatId }; // update prompt with chatID
+        }
 
         emitAssistantMessageCompleteEvent(chatId);
         setLoadingResponse(false);
@@ -124,7 +151,7 @@ export default function handleChat(
       _chatHistory[chatIdx] = updatedHistory;
     } else {
       _chatHistory.push({
-        uuid,
+        uuid: hasStreamUuid ? uuid : undefined,
         sources,
         error,
         content: textResponse,
@@ -135,6 +162,9 @@ export default function handleChat(
         chatId,
         metrics,
       });
+      if (type === "finalizeResponseStream") {
+        setLoadingResponse(false);
+      }
     }
     setChatHistory([..._chatHistory]);
   } else if (type === "agentInitWebsocketConnection") {

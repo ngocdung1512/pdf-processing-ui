@@ -14,7 +14,9 @@ function decodeWtInner(s) {
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) =>
+      String.fromCharCode(parseInt(h, 16))
+    );
 }
 
 /** NFC + NBSP + zero-width — helps "Công an..." vs "CÔNG AN..." with matchCase false */
@@ -45,8 +47,7 @@ function buildFindRegex(find, opts) {
       opts.matchCase ? "gu" : "giu"
     );
   }
-  const flex =
-    opts.flexibleWhitespace !== false && /\s/.test(f);
+  const flex = opts.flexibleWhitespace !== false && /\s/.test(f);
   if (flex) {
     const parts = f.split(/\s+/).filter(Boolean);
     if (parts.length >= 2) {
@@ -118,7 +119,12 @@ function replaceParagraphPreservingRuns(pXml, find, replace, opts) {
 function replaceInXmlDocument(xml, find, replace, opts) {
   let total = 0;
   const out = xml.replace(/<w:p[\s\S]*?<\/w:p>/g, (pXml) => {
-    const { xml: newP, count } = replaceParagraphPreservingRuns(pXml, find, replace, opts);
+    const { xml: newP, count } = replaceParagraphPreservingRuns(
+      pXml,
+      find,
+      replace,
+      opts
+    );
     total += count;
     return newP;
   });
@@ -151,7 +157,12 @@ function extractRoughPlainFromDocxBuffer(buffer) {
  * When find fails, return short excerpts from the file that contain words from `findRaw`
  * so the user can see how the text actually appears in Word.
  */
-function suggestSnippetsForFailedFind(buffer, findRaw, maxSnippets = 4, window = 95) {
+function suggestSnippetsForFailedFind(
+  buffer,
+  findRaw,
+  maxSnippets = 4,
+  window = 95
+) {
   try {
     const plain = extractRoughPlainFromDocxBuffer(buffer);
     if (!plain || plain.length < 3) return [];
@@ -180,7 +191,9 @@ function suggestSnippetsForFailedFind(buffer, findRaw, maxSnippets = 4, window =
           const key = `${i}`;
           if (!seen.has(key)) {
             seen.add(key);
-            const score = tokens.filter((t) => snip.toLowerCase().includes(t)).length;
+            const score = tokens.filter((t) =>
+              snip.toLowerCase().includes(t)
+            ).length;
             scored.push({ snip, score });
           }
         }
@@ -192,7 +205,8 @@ function suggestSnippetsForFailedFind(buffer, findRaw, maxSnippets = 4, window =
     const out = [];
     for (const { snip } of scored) {
       if (out.length >= maxSnippets) break;
-      if (!out.some((u) => u.slice(0, 35) === snip.slice(0, 35))) out.push(snip);
+      if (!out.some((u) => u.slice(0, 35) === snip.slice(0, 35)))
+        out.push(snip);
     }
     return out;
   } catch {
@@ -224,7 +238,12 @@ function findReplaceInDocxBuffer(buffer, find, replace, options = {}) {
     const entry = zip.file(name);
     if (!entry) continue;
     const xml = entry.asText();
-    const { xml: newXml, count } = replaceInXmlDocument(xml, find, replace, opts);
+    const { xml: newXml, count } = replaceInXmlDocument(
+      xml,
+      find,
+      replace,
+      opts
+    );
     total += count;
     if (count > 0) zip.file(name, newXml);
   }

@@ -121,4 +121,10 @@ function updateFormatFile(id, buffer) {
   }
 }
 
-module.exports = { listFormats, saveFormat, deleteFormat, getFormat, updateFormatFile };
+module.exports = {
+  listFormats,
+  saveFormat,
+  deleteFormat,
+  getFormat,
+  updateFormatFile,
+};

@@ -42,8 +42,7 @@ function runHtml(rXml) {
 
   const bold = /<w:b\/>|<w:b\s/.test(rPr) && !/<w:b\s+w:val="0"/.test(rPr);
   const italic = /<w:i\/>|<w:i\s/.test(rPr) && !/<w:i\s+w:val="0"/.test(rPr);
-  const underline =
-    /<w:u\s+w:val="(?!none)/.test(rPr);
+  const underline = /<w:u\s+w:val="(?!none)/.test(rPr);
 
   if (bold) text = `<strong>${text}</strong>`;
   if (italic) text = `<em>${text}</em>`;
@@ -74,7 +73,12 @@ function paragraphHtml(pXml) {
   // Alignment
   const jcM = pPr.match(/<w:jc\s+w:val="([^"]+)"/);
   const align = jcM ? jcM[1] : null;
-  const alignCss = align === "center" ? "text-align:center" : align === "right" ? "text-align:right" : "";
+  const alignCss =
+    align === "center"
+      ? "text-align:center"
+      : align === "right"
+        ? "text-align:right"
+        : "";
 
   const css = alignCss ? ` style="${alignCss}"` : "";
 
@@ -104,7 +108,9 @@ function tableHtml(tblXml) {
       let pM;
       while ((pM = paraRe.exec(cellM[0])) !== null)
         cellContent.push(allRunsHtml(pM[0]));
-      cells.push(`<td style="border:1px solid #aaa;padding:4px 6px">${cellContent.join("<br>") || "&nbsp;"}</td>`);
+      cells.push(
+        `<td style="border:1px solid #aaa;padding:4px 6px">${cellContent.join("<br>") || "&nbsp;"}</td>`
+      );
     }
     rows.push(`<tr>${cells.join("")}</tr>`);
   }

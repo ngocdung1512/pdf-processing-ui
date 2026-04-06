@@ -1,3 +1,5 @@
+import { stripAssistantThoughtForExport } from "@/components/WorkspaceChat/ChatContainer/ChatHistory/ThoughtContainer";
+
 /**
  * Build a compact transcript for LLM: USER / ASSISTANT lines up to the export target message.
  * Lets the model respect follow-ups like "sửa lại", "ý tôi là…".
@@ -26,13 +28,7 @@ export function buildConversationContextForTemplateExport(
   const lines = [];
   let chars = 0;
 
-  const stripThought = (t) =>
-    String(t || "")
-      .replace(/<think[\s\S]*?<\/think>/gi, "")
-      .replace(/<thinking[\s\S]*?<\/thinking>/gi, "")
-      .replace(/<thought[\s\S]*?<\/thought>/gi, "")
-      .replace(/<redacted_thinking>[\s\S]*?<\/redacted_thinking>/gi, "")
-      .trim();
+  const stripThought = (t) => stripAssistantThoughtForExport(t);
 
   for (const m of slice) {
     if (m.type === "statusResponse" || m.type === "rechartVisualize") continue;

@@ -47,7 +47,11 @@ async function analyzeTemplateFields(content) {
     const MIN_TIMEOUT = 5 * 60_000; // 5 minutes in ms
     const ANALYSIS_TIMEOUT = "7200000"; // 2 hours
     const prevTimeout = process.env[TIMEOUT_KEY];
-    if (!prevTimeout || isNaN(Number(prevTimeout)) || Number(prevTimeout) <= MIN_TIMEOUT) {
+    if (
+      !prevTimeout ||
+      isNaN(Number(prevTimeout)) ||
+      Number(prevTimeout) <= MIN_TIMEOUT
+    ) {
       process.env[TIMEOUT_KEY] = ANALYSIS_TIMEOUT;
     }
 
@@ -58,7 +62,9 @@ async function analyzeTemplateFields(content) {
     else process.env[TIMEOUT_KEY] = prevTimeout;
 
     if (!LLM || typeof LLM.getChatCompletion !== "function") {
-      console.warn("[docxAutoTagger] LLM provider does not support getChatCompletion");
+      console.warn(
+        "[docxAutoTagger] LLM provider does not support getChatCompletion"
+      );
       return null;
     }
 
@@ -83,12 +89,20 @@ function parseJsonResponse(text) {
   // Try fenced block first
   const fenced = stripped.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   if (fenced) {
-    try { return JSON.parse(fenced[1]); } catch { /* fall through */ }
+    try {
+      return JSON.parse(fenced[1]);
+    } catch {
+      /* fall through */
+    }
   }
   // Try the first top-level JSON object
   const bare = stripped.match(/\{[\s\S]*\}/);
   if (bare) {
-    try { return JSON.parse(bare[0]); } catch { /* fall through */ }
+    try {
+      return JSON.parse(bare[0]);
+    } catch {
+      /* fall through */
+    }
   }
   return null;
 }
@@ -114,20 +128,17 @@ function replaceInXml(xml, value, tag) {
  * Replace the content of a table cell's first paragraph with `newText`.
  */
 function setCellText(cellXml, newText) {
-  return cellXml.replace(
-    /<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/,
-    (pXml) => {
-      const pTag = pXml.match(/^<w:p(?:\s[^>]*)?>/)?.[0] ?? "<w:p>";
-      const pPrMatch = pXml.match(/<w:pPr(?:\s[^>]*)?>[\s\S]*?<\/w:pPr>/);
-      const pPr = pPrMatch ? pPrMatch[0] : "";
-      // Escape XML special chars inside the placeholder text
-      const safe = newText
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      return `${pTag}${pPr}<w:r><w:t xml:space="preserve">${safe}</w:t></w:r></w:p>`;
-    }
-  );
+  return cellXml.replace(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/, (pXml) => {
+    const pTag = pXml.match(/^<w:p(?:\s[^>]*)?>/)?.[0] ?? "<w:p>";
+    const pPrMatch = pXml.match(/<w:pPr(?:\s[^>]*)?>[\s\S]*?<\/w:pPr>/);
+    const pPr = pPrMatch ? pPrMatch[0] : "";
+    // Escape XML special chars inside the placeholder text
+    const safe = newText
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    return `${pTag}${pPr}<w:r><w:t xml:space="preserve">${safe}</w:t></w:r></w:p>`;
+  });
 }
 
 /**
@@ -169,33 +180,32 @@ function injectTableTemplate(xml, tableSpec) {
   if (!columns.length) return xml;
 
   let replaced = false;
-  return xml.replace(
-    /<w:tbl(?:\s[^>]*)?>[\s\S]*?<\/w:tbl>/g,
-    (tblXml) => {
-      if (replaced) return tblXml;
+  return xml.replace(/<w:tbl(?:\s[^>]*)?>[\s\S]*?<\/w:tbl>/g, (tblXml) => {
+    if (replaced) return tblXml;
 
-      const rowMatches = [
-        ...tblXml.matchAll(/<w:tr(?:\s[^>]*)?>[\s\S]*?<\/w:tr>/g),
-      ];
-      if (rowMatches.length < 2) return tblXml;
+    const rowMatches = [
+      ...tblXml.matchAll(/<w:tr(?:\s[^>]*)?>[\s\S]*?<\/w:tr>/g),
+    ];
+    if (rowMatches.length < 2) return tblXml;
 
-      // Only touch tables whose data row has the same column count as expected
-      const dataCells = [
-        ...rowMatches[1][0].matchAll(/<w:tc(?:\s[^>]*)?>[\s\S]*?<\/w:tc>/g),
-      ];
-      if (dataCells.length !== columns.length) return tblXml;
+    // Only touch tables whose data row has the same column count as expected
+    const dataCells = [
+      ...rowMatches[1][0].matchAll(/<w:tc(?:\s[^>]*)?>[\s\S]*?<\/w:tc>/g),
+    ];
+    if (dataCells.length !== columns.length) return tblXml;
 
-      replaced = true;
+    replaced = true;
 
-      const tblOpen = tblXml.match(/^<w:tbl(?:\s[^>]*)?>/)?.[0] ?? "<w:tbl>";
-      const tblPr = tblXml.match(/<w:tblPr(?:\s[^>]*)?>[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
-      const tblGrid = tblXml.match(/<w:tblGrid(?:\s[^>]*)?>[\s\S]*?<\/w:tblGrid>/)?.[0] ?? "";
-      const headerRow = rowMatches[0][0];
-      const templateRow = buildLoopRow(rowMatches[1][0], array_name, columns);
+    const tblOpen = tblXml.match(/^<w:tbl(?:\s[^>]*)?>/)?.[0] ?? "<w:tbl>";
+    const tblPr =
+      tblXml.match(/<w:tblPr(?:\s[^>]*)?>[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
+    const tblGrid =
+      tblXml.match(/<w:tblGrid(?:\s[^>]*)?>[\s\S]*?<\/w:tblGrid>/)?.[0] ?? "";
+    const headerRow = rowMatches[0][0];
+    const templateRow = buildLoopRow(rowMatches[1][0], array_name, columns);
 
-      return `${tblOpen}${tblPr}${tblGrid}${headerRow}${templateRow}</w:tbl>`;
-    }
-  );
+    return `${tblOpen}${tblPr}${tblGrid}${headerRow}${templateRow}</w:tbl>`;
+  });
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -249,8 +259,7 @@ function getFieldList(analysis) {
   const out = [];
   for (const tag of Object.keys(analysis.simple_fields ?? {})) out.push(tag);
   for (const tbl of analysis.tables ?? []) {
-    for (const col of tbl.columns ?? [])
-      out.push(`${tbl.array_name}[].${col}`);
+    for (const col of tbl.columns ?? []) out.push(`${tbl.array_name}[].${col}`);
   }
   return out;
 }
@@ -289,12 +298,15 @@ function buildTaggedDocxFromText(text, analysis) {
     for (const { array_name = "rows", columns = [] } of analysis.tables ?? []) {
       if (!columns.length) continue;
       const headerCells = columns
-        .map((c) => `<w:tc><w:p><w:r><w:t>${escape(c)}</w:t></w:r></w:p></w:tc>`)
+        .map(
+          (c) => `<w:tc><w:p><w:r><w:t>${escape(c)}</w:t></w:r></w:p></w:tc>`
+        )
         .join("");
       const dataCells = columns
         .map((c, i) => {
           let ph;
-          if (columns.length === 1) ph = `{#${array_name}}{${c}}{/${array_name}}`;
+          if (columns.length === 1)
+            ph = `{#${array_name}}{${c}}{/${array_name}}`;
           else if (i === 0) ph = `{#${array_name}}{${c}}`;
           else if (i === columns.length - 1) ph = `{${c}}{/${array_name}}`;
           else ph = `{${c}}`;
@@ -327,9 +339,10 @@ function buildTaggedDocxFromText(text, analysis) {
     zip.file("[Content_Types].xml", contentTypesXml);
     zip.file("_rels/.rels", relsXml);
     zip.file("word/document.xml", documentXml);
-    zip.file("word/_rels/document.xml.rels",
+    zip.file(
+      "word/_rels/document.xml.rels",
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`
     );
 
     return zip.generate({
@@ -344,4 +357,9 @@ function buildTaggedDocxFromText(text, analysis) {
   }
 }
 
-module.exports = { analyzeTemplateFields, buildTaggedDocx, buildTaggedDocxFromText, getFieldList };
+module.exports = {
+  analyzeTemplateFields,
+  buildTaggedDocx,
+  buildTaggedDocxFromText,
+  getFieldList,
+};

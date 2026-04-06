@@ -66,13 +66,6 @@ export default function ChatContainer({ workspace, knownHistory = [] }) {
       document.getElementById(PROMPT_INPUT_ID)?.value || "";
     if (!currentMessage) return false;
 
-    // Silently prepend stored template context (set by DocxTemplateButton) to
-    // the LLM prompt without showing it in the chat UI.
-    const templatePrompt = localStorage.getItem("DOCX_TEMPLATE_PROMPT") || "";
-    const llmMessage = templatePrompt
-      ? `${templatePrompt}\n\n${currentMessage}`
-      : currentMessage;
-
     const prevChatHistory = [
       ...chatHistory,
       {
@@ -84,7 +77,7 @@ export default function ChatContainer({ workspace, knownHistory = [] }) {
         content: "",
         role: "assistant",
         pending: true,
-        userMessage: llmMessage, // full context sent to LLM
+        userMessage: currentMessage,
         animate: true,
       },
     ];

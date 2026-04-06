@@ -302,6 +302,93 @@ export function FileProcessor() {
 }
 
 function ChatbotCard() {
+  const [chatbotBusy, setChatbotBusy] = useState(false)
+  const [chatbotRunning, setChatbotRunning] = useState(false)
+  const [chatbotNote, setChatbotNote] = useState<string | null>(null)
+  const popupRef = useRef<Window | null>(null)
+  const popupWatchRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const res = await fetch(apiUrl("/chatbot/status"))
+        if (!res.ok) return
+        const data = await res.json()
+        if (mounted) {
+          setChatbotRunning(Boolean(data?.running || data?.partially_running))
+        }
+      } catch {
+        // ignore status probe errors
+      }
+    })()
+    return () => {
+      mounted = false
+      if (popupWatchRef.current) {
+        clearInterval(popupWatchRef.current)
+        popupWatchRef.current = null
+      }
+    }
+  }, [])
+
+  const stopChatbot = async () => {
+    setChatbotBusy(true)
+    setChatbotNote("Đang tắt trợ lý chatbot...")
+    try {
+      const res = await fetch(apiUrl("/chatbot/stop"), { method: "POST" })
+      if (!res.ok) throw new Error("Không thể tắt chatbot")
+      setChatbotRunning(false)
+      setChatbotNote("Đã tắt chatbot, VRAM sẽ giảm sau ít giây.")
+    } catch (e) {
+      setChatbotNote(e instanceof Error ? e.message : "Tắt chatbot thất bại.")
+    } finally {
+      setChatbotBusy(false)
+    }
+  }
+
+  const watchPopupAndAutoStop = () => {
+    // Only watch when popup was opened successfully.
+    if (!popupRef.current) return
+    if (popupWatchRef.current) {
+      clearInterval(popupWatchRef.current)
+      popupWatchRef.current = null
+    }
+    popupWatchRef.current = window.setInterval(async () => {
+      const popup = popupRef.current
+      if (popup && !popup.closed) return
+      if (popupWatchRef.current) {
+        clearInterval(popupWatchRef.current)
+        popupWatchRef.current = null
+      }
+      popupRef.current = null
+      await stopChatbot()
+    }, 1200)
+  }
+
+  const openChatbot = async () => {
+    setChatbotBusy(true)
+    setChatbotNote("Đang khởi động trợ lý chatbot...")
+    try {
+      const res = await fetch(apiUrl("/chatbot/start"), { method: "POST" })
+      if (!res.ok) throw new Error("Không thể khởi động chatbot")
+      setChatbotRunning(true)
+      // Give frontend(3002) a short moment to boot before opening tab.
+      setTimeout(() => {
+        popupRef.current = window.open("http://localhost:3002", "_blank")
+        if (popupRef.current) {
+          watchPopupAndAutoStop()
+        } else {
+          setChatbotNote("Không mở được tab chatbot (có thể bị chặn popup). Chatbot vẫn đang chạy.")
+        }
+      }, 900)
+      setChatbotNote("Chatbot đã khởi động. Đóng tab chatbot sẽ tự tắt tiến trình.")
+    } catch (e) {
+      setChatbotNote(e instanceof Error ? e.message : "Khởi động chatbot thất bại.")
+    } finally {
+      setChatbotBusy(false)
+    }
+  }
+
   return (
     <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-6 md:p-8 shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5 relative overflow-hidden h-full min-h-[420px] flex flex-col">
       <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-sky-500 to-emerald-400 opacity-60" />
@@ -322,18 +409,28 @@ function ChatbotCard() {
           </div>
         </div>
 
-        <a
-          href="http://localhost:3002"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-black text-white px-4 py-3 rounded-md text-sm font-semibold shadow-md hover:shadow-lg transition-all"
+        <button
+          onClick={openChatbot}
+          disabled={chatbotBusy}
+          className="inline-flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-black disabled:opacity-60 text-white px-4 py-3 rounded-md text-sm font-semibold shadow-md hover:shadow-lg transition-all"
         >
-          <MessageCircle className="w-4 h-4" />
+          {chatbotBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
           Mở trợ lý chatbot
-        </a>
+        </button>
+
+        {chatbotRunning && (
+          <button
+            onClick={stopChatbot}
+            disabled={chatbotBusy}
+            className="inline-flex items-center justify-center gap-2 border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-60 text-gray-800 px-4 py-2 rounded-md text-xs font-semibold transition-all"
+          >
+            Tắt trợ lý chatbot
+          </button>
+        )}
 
         <p className="text-[11px] text-gray-400 text-left w-full max-w-md">
-          Lưu ý: Yêu cầu môi trường chatbot (AnythingLLM) đang được khởi động trong nền.
+          {chatbotNote ??
+            "Bấm mở để khởi động chatbot. Khi đóng tab chatbot, hệ thống sẽ tự dừng chatbot để giải phóng VRAM."}
         </p>
       </div>
     </div>

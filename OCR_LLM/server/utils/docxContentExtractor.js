@@ -30,9 +30,12 @@ function formatParagraph(pXml) {
 
   // Map heading styles (Word may use numeric IDs in some locales)
   if (styleId) {
-    if (/^(heading1|heading 1|1|titre1|heading-1)$/.test(styleId)) return `# ${text}`;
-    if (/^(heading2|heading 2|2|titre2|heading-2)$/.test(styleId)) return `## ${text}`;
-    if (/^(heading3|heading 3|3|titre3|heading-3)$/.test(styleId)) return `### ${text}`;
+    if (/^(heading1|heading 1|1|titre1|heading-1)$/.test(styleId))
+      return `# ${text}`;
+    if (/^(heading2|heading 2|2|titre2|heading-2)$/.test(styleId))
+      return `## ${text}`;
+    if (/^(heading3|heading 3|3|titre3|heading-3)$/.test(styleId))
+      return `### ${text}`;
     if (/^(title|titre)$/.test(styleId)) return `**${text}**`;
   }
 

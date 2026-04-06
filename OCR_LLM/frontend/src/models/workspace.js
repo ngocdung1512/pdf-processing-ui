@@ -5,6 +5,23 @@ import WorkspaceThread from "@/models/workspaceThread";
 import { v4 } from "uuid";
 import { ABORT_STREAM_EVENT } from "@/utils/chat";
 
+const HYBRID_SESSION_STORAGE_PREFIX = "anythingllm-hybrid-session";
+
+function getOrCreateHybridSessionId(workspaceSlug) {
+  const slug = String(workspaceSlug || "").trim() || "default";
+  try {
+    const key = `${HYBRID_SESSION_STORAGE_PREFIX}:${slug}`;
+    let id = window.sessionStorage.getItem(key);
+    if (!id) {
+      id = v4();
+      window.sessionStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return v4();
+  }
+}
+
 const Workspace = {
   workspaceOrderStorageKey: "anythingllm-workspace-order",
   /** The maximum percentage of the context window that can be used for attachments */
@@ -173,12 +190,16 @@ const Workspace = {
     // The backend response abort handling is done in each LLM's handleStreamResponse.
     window.addEventListener(ABORT_STREAM_EVENT, () => {
       ctrl.abort();
-      handleChat({ id: v4(), type: "stopGeneration" });
+      handleChat({ uuid: v4(), type: "stopGeneration" });
     });
 
     await fetchEventSource(`${API_BASE}/workspace/${slug}/stream-chat`, {
       method: "POST",
-      body: JSON.stringify({ message, attachments }),
+      body: JSON.stringify({
+        message,
+        attachments,
+        hybridSessionId: getOrCreateHybridSessionId(slug),
+      }),
       headers: baseHeaders(),
       signal: ctrl.signal,
       openWhenHidden: true,
@@ -191,7 +212,7 @@ const Workspace = {
           response.status !== 429
         ) {
           handleChat({
-            id: v4(),
+            uuid: v4(),
             type: "abort",
             textResponse: null,
             sources: [],
@@ -202,7 +223,7 @@ const Workspace = {
           throw new Error("Invalid Status code response.");
         } else {
           handleChat({
-            id: v4(),
+            uuid: v4(),
             type: "abort",
             textResponse: null,
             sources: [],
@@ -219,7 +240,7 @@ const Workspace = {
       },
       onerror(err) {
         handleChat({
-          id: v4(),
+          uuid: v4(),
           type: "abort",
           textResponse: null,
           sources: [],

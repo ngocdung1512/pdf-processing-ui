@@ -466,11 +466,7 @@ function workspaceEndpoints(app) {
         );
         const removals = matchingDocs.map((d) => d.docpath).filter(Boolean);
         if (removals.length > 0) {
-          await Document.removeDocuments(
-            workspace,
-            removals,
-            user?.id ?? null
-          );
+          await Document.removeDocuments(workspace, removals, user?.id ?? null);
         }
 
         const parsedList = await WorkspaceParsedFiles.where({
@@ -886,12 +882,12 @@ function workspaceEndpoints(app) {
         // Get threadId we are branching from if that request body is sent
         // and is a valid thread slug.
         const threadId = !!threadSlug
-          ? (
+          ? ((
               await WorkspaceThread.get({
                 slug: String(threadSlug),
                 workspace_id: workspace.id,
               })
-            )?.id ?? null
+            )?.id ?? null)
           : null;
         const chatsToFork = await WorkspaceChats.where(
           {

@@ -389,6 +389,7 @@ function apiWorkspaceThreadEndpoints(app) {
           userId,
           attachments = [],
           reset = false,
+          hybridSessionId = null,
         } = reqBody(request);
         const workspace = await Workspace.get({ slug });
         const thread = await WorkspaceThread.get({
@@ -431,6 +432,10 @@ function apiWorkspaceThreadEndpoints(app) {
           thread,
           attachments,
           reset,
+          hybridSessionId:
+            hybridSessionId != null && String(hybridSessionId).trim().length > 0
+              ? String(hybridSessionId).trim()
+              : null,
         });
         await Telemetry.sendTelemetry("sent_chat", {
           LLMSelection: process.env.LLM_PROVIDER || "openai",
@@ -557,6 +562,7 @@ function apiWorkspaceThreadEndpoints(app) {
           userId,
           attachments = [],
           reset = false,
+          hybridSessionId = null,
         } = reqBody(request);
         const workspace = await Workspace.get({ slug });
         const thread = await WorkspaceThread.get({
@@ -607,6 +613,10 @@ function apiWorkspaceThreadEndpoints(app) {
           thread,
           attachments,
           reset,
+          hybridSessionId:
+            hybridSessionId != null && String(hybridSessionId).trim().length > 0
+              ? String(hybridSessionId).trim()
+              : null,
         });
         await Telemetry.sendTelemetry("sent_chat", {
           LLMSelection: process.env.LLM_PROVIDER || "openai",

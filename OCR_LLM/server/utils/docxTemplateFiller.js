@@ -49,9 +49,7 @@ function fillDocxTemplate(templateBuffer, data) {
   } catch (err) {
     // Attach template error details for debugging
     if (err.properties && err.properties.errors) {
-      const message = err.properties.errors
-        .map((e) => e.message)
-        .join(", ");
+      const message = err.properties.errors.map((e) => e.message).join(", ");
       throw new Error(`Template fill error: ${message}`);
     }
     throw err;

@@ -21,10 +21,7 @@ const { PushNotifications } = require("../PushNotifications");
 function applyHttpServerTimeouts(server) {
   if (!server || typeof server.setTimeout !== "function") return;
   const raw = process.env.HTTP_SERVER_SOCKET_TIMEOUT_MS;
-  const ms =
-    raw === undefined || raw === "" || raw === "0"
-      ? 0
-      : Number(raw);
+  const ms = raw === undefined || raw === "" || raw === "0" ? 0 : Number(raw);
   const v = Number.isFinite(ms) && ms >= 0 ? ms : 0;
   server.setTimeout(v);
   if (server.requestTimeout !== undefined) server.requestTimeout = v;

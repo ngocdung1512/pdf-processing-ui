@@ -1,4 +1,5 @@
 const { WorkspaceChats } = require("../../../models/workspaceChats");
+const { clearHybridDocIdsForWorkspaceKeys } = require("../hybridChatbot");
 
 async function resetMemory(
   workspace,
@@ -15,6 +16,8 @@ async function resetMemory(
         thread.id
       )
     : await WorkspaceChats.markHistoryInvalid(workspace.id, user);
+
+  clearHybridDocIdsForWorkspaceKeys({ workspace, thread });
 
   return {
     uuid: msgUUID,

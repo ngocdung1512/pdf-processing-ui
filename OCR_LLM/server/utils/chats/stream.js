@@ -19,6 +19,11 @@ const {
   hasPdfLikeDocumentAttachment,
 } = require("./hybridChatbot");
 const { appendPermissiveRagIfEmpty } = require("./ragFallback");
+const {
+  shouldInjectFullWorkspaceContext,
+  isTrivialHybridStyleGreeting,
+  hasDocumentAttachmentInRequest,
+} = require("./workspaceChatContext");
 
 const VALID_CHAT_MODE = ["chat", "query"];
 
@@ -29,7 +34,8 @@ async function streamChatWithWorkspace(
   chatMode = "chat",
   user = null,
   thread = null,
-  attachments = []
+  attachments = [],
+  hybridClientSessionId = null
 ) {
   const uuid = uuidv4();
   const updatedMessage = await grepCommand(message, user);
@@ -46,24 +52,14 @@ async function streamChatWithWorkspace(
     return;
   }
 
-  // If is agent enabled chat we will exit this flow early.
-  const isAgentChat = await grepAgents({
-    uuid,
-    response,
-    message: updatedMessage,
-    user,
-    workspace,
-    thread,
-  });
-  if (isAgentChat) return;
-
-  const { useHybrid, hybridDocIds } = await prepareHybridState(
+  const { useHybrid, hybridDocIds, pythonSessionId } = await prepareHybridState(
     updatedMessage,
     attachments,
     workspace,
     thread,
     null,
-    user
+    user,
+    hybridClientSessionId
   );
   let runHybrid = useHybrid;
   if (
@@ -80,25 +76,31 @@ async function streamChatWithWorkspace(
     try {
       const hybrid = await requestHybridChatbot({
         message: updatedMessage,
-        sessionId: null,
+        sessionId: pythonSessionId,
         docIds: hybridDocIds,
       });
       const textResponse = String(hybrid?.response || "Không có kết quả.");
       const route = hybrid?.route || "chatbot";
-      const { chat } = await WorkspaceChats.new({
-        workspaceId: workspace.id,
-        prompt: updatedMessage,
-        response: {
-          text: textResponse,
-          sources: [],
-          attachments,
-          type: chatMode,
-          metrics: { route: `hybrid:${route}` },
-        },
-        include: true,
-        threadId: thread?.id || null,
-        user,
-      });
+      let chat = null;
+      try {
+        const row = await WorkspaceChats.new({
+          workspaceId: workspace.id,
+          prompt: updatedMessage,
+          response: {
+            text: textResponse,
+            sources: [],
+            attachments,
+            type: chatMode,
+            metrics: { route: `hybrid:${route}` },
+          },
+          include: true,
+          threadId: thread?.id || null,
+          user,
+        });
+        chat = row.chat;
+      } catch (e) {
+        console.error("[Hybrid Router] WorkspaceChats.new failed:", e.message);
+      }
       writeResponseChunk(response, {
         uuid,
         type: "textResponseChunk",
@@ -112,7 +114,7 @@ async function streamChatWithWorkspace(
         type: "finalizeResponseStream",
         close: true,
         error: false,
-        chatId: chat.id,
+        chatId: chat?.id ?? null,
         metrics: { route: `hybrid:${route}` },
         sources: [],
       });
@@ -121,6 +123,23 @@ async function streamChatWithWorkspace(
       console.warn("[Hybrid Router] fallback to AnythingLLM:", error.message);
     }
   }
+
+  // If is agent enabled chat we will exit this flow early.
+  const isAgentChat = await grepAgents({
+    uuid,
+    response,
+    message: updatedMessage,
+    user,
+    workspace,
+    thread,
+  });
+  if (isAgentChat) return;
+
+  const injectWorkspace = shouldInjectFullWorkspaceContext(
+    chatMode,
+    updatedMessage,
+    { hasDocumentAttachment: hasDocumentAttachmentInRequest(attachments) }
+  );
 
   const LLMConnector = getLLMProvider({
     provider: workspace?.chatProvider,
@@ -135,32 +154,34 @@ async function streamChatWithWorkspace(
   // User is trying to query-mode chat a workspace that has no data in it - so
   // we should exit early as no information can be found under these conditions.
   if ((!hasVectorizedSpace || embeddingsCount === 0) && chatMode === "query") {
-    const textResponse =
-      workspace?.queryRefusalResponse ??
-      "There is no relevant information in this workspace to answer your query.";
-    writeResponseChunk(response, {
-      id: uuid,
-      type: "textResponse",
-      textResponse,
-      sources: [],
-      attachments,
-      close: true,
-      error: null,
-    });
-    await WorkspaceChats.new({
-      workspaceId: workspace.id,
-      prompt: message,
-      response: {
-        text: textResponse,
+    if (!isTrivialHybridStyleGreeting(updatedMessage)) {
+      const textResponse =
+        workspace?.queryRefusalResponse ??
+        "There is no relevant information in this workspace to answer your query.";
+      writeResponseChunk(response, {
+        uuid,
+        type: "textResponse",
+        textResponse,
         sources: [],
-        type: chatMode,
         attachments,
-      },
-      threadId: thread?.id || null,
-      include: false,
-      user,
-    });
-    return;
+        close: true,
+        error: null,
+      });
+      await WorkspaceChats.new({
+        workspaceId: workspace.id,
+        prompt: message,
+        response: {
+          text: textResponse,
+          sources: [],
+          type: chatMode,
+          attachments,
+        },
+        threadId: thread?.id || null,
+        include: false,
+        user,
+      });
+      return;
+    }
   }
 
   // If we are here we know that we are in a workspace that is:
@@ -177,71 +198,83 @@ async function streamChatWithWorkspace(
     thread,
     messageLimit,
   });
+  // Lightweight turns skip workspace injection; do not pass prior thread history into the LLM
+  // prompt (still persisted in DB) so short greetings stay fast and do not replay old report tasks.
+  const chatHistoryForLlm = injectWorkspace ? chatHistory : [];
+  const rawHistoryForLlm = injectWorkspace ? rawHistory : [];
 
-  // Look for pinned documents and see if the user decided to use this feature. We will also do a vector search
-  // as pinning is a supplemental tool but it should be used with caution since it can easily blow up a context window.
-  // However we limit the maximum of appended context to 80% of its overall size, mostly because if it expands beyond this
-  // it will undergo prompt compression anyway to make it work. If there is so much pinned that the context here is bigger than
-  // what the model can support - it would get compressed anyway and that really is not the point of pinning. It is really best
-  // suited for high-context models.
-  await new DocumentManager({
-    workspace,
-    maxTokens: LLMConnector.promptWindowLimit(),
-  })
-    .pinnedDocs()
-    .then((pinnedDocs) => {
-      pinnedDocs.forEach((doc) => {
-        const { pageContent, ...metadata } = doc;
-        pinnedDocIdentifiers.push(sourceIdentifier(doc));
-        contextTexts.push(
-          wrapPageContentWithSourceFence(pageContent, metadata)
-        );
-        sources.push({
-          text:
-            pageContent.slice(0, 1_000) +
-            "...continued on in source document...",
-          ...metadata,
+  let vectorSearchResults = {
+    contextTexts: [],
+    sources: [],
+    message: null,
+  };
+
+  if (injectWorkspace) {
+    // Look for pinned documents and see if the user decided to use this feature. We will also do a vector search
+    // as pinning is a supplemental tool but it should be used with caution since it can easily blow up a context window.
+    // However we limit the maximum of appended context to 80% of its overall size, mostly because if it expands beyond this
+    // it will undergo prompt compression anyway to make it work. If there is so much pinned that the context here is bigger than
+    // what the model can support - it would get compressed anyway and that really is not the point of pinning. It is really best
+    // suited for high-context models.
+    await new DocumentManager({
+      workspace,
+      maxTokens: LLMConnector.promptWindowLimit(),
+    })
+      .pinnedDocs()
+      .then((pinnedDocs) => {
+        pinnedDocs.forEach((doc) => {
+          const { pageContent, ...metadata } = doc;
+          pinnedDocIdentifiers.push(sourceIdentifier(doc));
+          contextTexts.push(
+            wrapPageContentWithSourceFence(pageContent, metadata)
+          );
+          sources.push({
+            text:
+              pageContent.slice(0, 1_000) +
+              "...continued on in source document...",
+            ...metadata,
+          });
         });
+      });
+
+    // Inject any parsed files for this workspace/thread/user
+    const parsedFiles = await WorkspaceParsedFiles.getContextFiles(
+      workspace,
+      thread || null,
+      user || null
+    );
+    parsedFiles.forEach((doc) => {
+      const { pageContent, ...metadata } = doc;
+      contextTexts.push(wrapPageContentWithSourceFence(pageContent, metadata));
+      sources.push({
+        text:
+          pageContent.slice(0, 1_000) + "...continued on in source document...",
+        ...metadata,
       });
     });
 
-  // Inject any parsed files for this workspace/thread/user
-  const parsedFiles = await WorkspaceParsedFiles.getContextFiles(
-    workspace,
-    thread || null,
-    user || null
-  );
-  parsedFiles.forEach((doc) => {
-    const { pageContent, ...metadata } = doc;
-    contextTexts.push(wrapPageContentWithSourceFence(pageContent, metadata));
-    sources.push({
-      text:
-        pageContent.slice(0, 1_000) + "...continued on in source document...",
-      ...metadata,
-    });
-  });
-
-  const vectorSearchResults =
-    embeddingsCount !== 0
-      ? await VectorDb.performSimilaritySearch({
-          namespace: workspace.slug,
-          input: updatedMessage,
-          LLMConnector,
-          similarityThreshold: workspace?.similarityThreshold,
-          topN: workspace?.topN,
-          filterIdentifiers: pinnedDocIdentifiers,
-          rerank: workspace?.vectorSearchMode === "rerank",
-        })
-      : {
-          contextTexts: [],
-          sources: [],
-          message: null,
-        };
+    vectorSearchResults =
+      embeddingsCount !== 0
+        ? await VectorDb.performSimilaritySearch({
+            namespace: workspace.slug,
+            input: updatedMessage,
+            LLMConnector,
+            similarityThreshold: workspace?.similarityThreshold,
+            topN: workspace?.topN,
+            filterIdentifiers: pinnedDocIdentifiers,
+            rerank: workspace?.vectorSearchMode === "rerank",
+          })
+        : {
+            contextTexts: [],
+            sources: [],
+            message: null,
+          };
+  }
 
   // Failed similarity search if it was run at all and failed.
   if (!!vectorSearchResults.message) {
     writeResponseChunk(response, {
-      id: uuid,
+      uuid,
       type: "abort",
       textResponse: null,
       sources: [],
@@ -251,23 +284,25 @@ async function streamChatWithWorkspace(
     return;
   }
 
-  const { fillSourceWindow } = require("../helpers/chat");
-  const filledSources = fillSourceWindow({
-    nDocs: workspace?.topN || 15,
-    searchResults: vectorSearchResults.sources,
-    history: rawHistory,
-    filterIdentifiers: pinnedDocIdentifiers,
-  });
+  if (injectWorkspace) {
+    const { fillSourceWindow } = require("../helpers/chat");
+    const filledSources = fillSourceWindow({
+      nDocs: workspace?.topN || 15,
+      searchResults: vectorSearchResults.sources,
+      history: rawHistory,
+      filterIdentifiers: pinnedDocIdentifiers,
+    });
 
-  // Why does contextTexts get all the info, but sources only get current search?
-  // This is to give the ability of the LLM to "comprehend" a contextual response without
-  // populating the Citations under a response with documents the user "thinks" are irrelevant
-  // due to how we manage backfilling of the context to keep chats with the LLM more correct in responses.
-  // If a past citation was used to answer the question - that is visible in the history so it logically makes sense
-  // and does not appear to the user that a new response used information that is otherwise irrelevant for a given prompt.
-  // TLDR; reduces GitHub issues for "LLM citing document that has no answer in it" while keep answers highly accurate.
-  contextTexts = [...contextTexts, ...filledSources.contextTexts];
-  sources = [...sources, ...vectorSearchResults.sources];
+    // Why does contextTexts get all the info, but sources only get current search?
+    // This is to give the ability of the LLM to "comprehend" a contextual response without
+    // populating the Citations under a response with documents the user "thinks" are irrelevant
+    // due to how we manage backfilling of the context to keep chats with the LLM more correct in responses.
+    // If a past citation was used to answer the question - that is visible in the history so it logically makes sense
+    // and does not appear to the user that a new response used information that is otherwise irrelevant for a given prompt.
+    // TLDR; reduces GitHub issues for "LLM citing document that has no answer in it" while keep answers highly accurate.
+    contextTexts = [...contextTexts, ...filledSources.contextTexts];
+    sources = [...sources, ...vectorSearchResults.sources];
+  }
 
   const afterPermissiveRag = await appendPermissiveRagIfEmpty({
     VectorDb,
@@ -278,18 +313,23 @@ async function streamChatWithWorkspace(
     embeddingsCount,
     contextTexts,
     sources,
+    skipPermissiveFallback: !injectWorkspace,
   });
   contextTexts = afterPermissiveRag.contextTexts;
   sources = afterPermissiveRag.sources;
 
   // If in query mode and no context chunks are found from search, backfill, or pins -  do not
   // let the LLM try to hallucinate a response or use general knowledge and exit early
-  if (chatMode === "query" && contextTexts.length === 0) {
+  if (
+    chatMode === "query" &&
+    contextTexts.length === 0 &&
+    !isTrivialHybridStyleGreeting(updatedMessage)
+  ) {
     const textResponse =
       workspace?.queryRefusalResponse ??
       "There is no relevant information in this workspace to answer your query.";
     writeResponseChunk(response, {
-      id: uuid,
+      uuid,
       type: "textResponse",
       textResponse,
       sources: [],
@@ -320,10 +360,10 @@ async function streamChatWithWorkspace(
       systemPrompt: await chatPrompt(workspace, user),
       userPrompt: updatedMessage,
       contextTexts,
-      chatHistory,
+      chatHistory: chatHistoryForLlm,
       attachments,
     },
-    rawHistory
+    rawHistoryForLlm
   );
 
   // If streaming is not explicitly enabled for connector
@@ -361,30 +401,26 @@ async function streamChatWithWorkspace(
     metrics = stream.metrics;
   }
 
+  let savedChatId = null;
   if (completeText?.length > 0) {
-    const { chat } = await WorkspaceChats.new({
-      workspaceId: workspace.id,
-      prompt: message,
-      response: {
-        text: completeText,
-        sources,
-        type: chatMode,
-        attachments,
-        metrics,
-      },
-      threadId: thread?.id || null,
-      user,
-    });
-
-    writeResponseChunk(response, {
-      uuid,
-      type: "finalizeResponseStream",
-      close: true,
-      error: false,
-      chatId: chat.id,
-      metrics,
-    });
-    return;
+    try {
+      const { chat } = await WorkspaceChats.new({
+        workspaceId: workspace.id,
+        prompt: message,
+        response: {
+          text: completeText,
+          sources,
+          type: chatMode,
+          attachments,
+          metrics,
+        },
+        threadId: thread?.id || null,
+        user,
+      });
+      savedChatId = chat?.id ?? null;
+    } catch (e) {
+      console.error("[stream] WorkspaceChats.new failed:", e.message);
+    }
   }
 
   writeResponseChunk(response, {
@@ -392,6 +428,7 @@ async function streamChatWithWorkspace(
     type: "finalizeResponseStream",
     close: true,
     error: false,
+    chatId: savedChatId,
     metrics,
   });
   return;

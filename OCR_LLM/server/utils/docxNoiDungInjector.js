@@ -125,7 +125,10 @@ function findBestMatchingParagraph(docXml, target) {
   while ((m = paraRe.exec(docXml)) !== null) {
     const pt = paraText(m[0]);
     if (!pt) continue;
-    if (pt === norm) { exact = m[0]; break; }
+    if (pt === norm) {
+      exact = m[0];
+      break;
+    }
     if (!contains && pt.includes(norm)) contains = m[0];
     if (!contained && norm.includes(pt) && pt.length > 5) contained = m[0];
   }
@@ -187,7 +190,9 @@ async function autoInjectNoiDung(fileBuffer, content) {
     // 1. LLM: identify the header boundary
     const lastHeaderLine = await detectHeaderBoundary(content);
     if (!lastHeaderLine) {
-      console.warn("[docxNoiDungInjector] LLM could not identify header boundary");
+      console.warn(
+        "[docxNoiDungInjector] LLM could not identify header boundary"
+      );
       return null;
     }
 

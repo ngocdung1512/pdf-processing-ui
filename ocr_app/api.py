@@ -9,7 +9,9 @@ import os
 import re
 import threading
 import time
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import Popen, PIPE, STDOUT, DEVNULL
+import subprocess
+import socket
 
 # Import PyMuPDF for PDF detection
 try:
@@ -37,6 +39,8 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 # ===============================
 JOB_PROGRESS = {}   # job_id -> {current, total, percent, elapsed_time, start_time, pdf_type}
 JOB_STATUS = {}     # job_id -> running | done | error | cancelled
+
+CHATBOT_PORTS = [3002, 4101, 8888, 8001]
 
 
 def detect_pdf_type(pdf_path: Path) -> str:
@@ -357,6 +361,90 @@ def process_pdf_background(job_id: str, pdf_path: Path, output_docx: Path, pdf_t
         print(f"[ERROR] Traceback: {traceback.format_exc()}", flush=True)
         JOB_STATUS[job_id] = "error"
         JOB_PROGRESS[job_id]["error"] = str(e)
+
+
+def _is_port_listening(port: int, host: str = "127.0.0.1") -> bool:
+    """Return True if TCP port is accepting connections."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.2)
+            return sock.connect_ex((host, int(port))) == 0
+    except Exception:
+        return False
+
+
+def _chatbot_status() -> dict:
+    statuses = {str(port): _is_port_listening(port) for port in CHATBOT_PORTS}
+    all_up = all(statuses.values())
+    any_up = any(statuses.values())
+    return {"running": all_up, "partially_running": any_up and not all_up, "ports": statuses}
+
+
+def _kill_ports_windows(ports) -> None:
+    """Kill all LISTENING processes on the given TCP ports (Windows)."""
+    for port in ports:
+        cmd = (
+            f"for /f \"tokens=5\" %a in ('netstat -ano ^| findstr \":{port}\" ^| findstr LISTENING') "
+            f"do taskkill /PID %a /F"
+        )
+        # Use cmd /c for batch-compatible for-loop syntax.
+        subprocess.run(["cmd", "/c", cmd], stdout=DEVNULL, stderr=DEVNULL, check=False)
+
+
+@app.get("/chatbot/status")
+def chatbot_status():
+    """Check AnythingLLM chatbot core runtime status (3002/4101/8888/8001)."""
+    return _chatbot_status()
+
+
+@app.post("/chatbot/start")
+def chatbot_start():
+    """
+    Start chatbot core services on demand (opened from OCR UI button).
+    This starts scripts/startup/start-chatbot-core.bat in a detached process.
+    """
+    status = _chatbot_status()
+    if status["running"]:
+        return {"started": False, "message": "Chatbot already running.", **status}
+
+    script = REPO_ROOT / "scripts" / "startup" / "start-chatbot-core.bat"
+    if not script.exists():
+        return JSONResponse(
+            status_code=500,
+            content={"started": False, "error": f"Script not found: {script}"},
+        )
+
+    try:
+        # Start detached command window so API request returns immediately.
+        Popen(
+            ["cmd", "/c", "start", "\"AnythingLLM Startup (On Demand)\"", "cmd", "/k", str(script)],
+            cwd=str(REPO_ROOT),
+            stdout=DEVNULL,
+            stderr=DEVNULL,
+        )
+        return {"started": True, "message": "Chatbot startup triggered.", **_chatbot_status()}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"started": False, "error": f"Failed to start chatbot: {e}"},
+        )
+
+
+@app.post("/chatbot/stop")
+def chatbot_stop():
+    """
+    Stop chatbot core services on demand by killing listening processes
+    on chatbot ports (3002/4101/8888/8001).
+    """
+    try:
+        _kill_ports_windows(CHATBOT_PORTS)
+        time.sleep(0.4)
+        return {"stopped": True, "message": "Chatbot stop requested.", **_chatbot_status()}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"stopped": False, "error": f"Failed to stop chatbot: {e}"},
+        )
 
 
 @app.post("/convert")

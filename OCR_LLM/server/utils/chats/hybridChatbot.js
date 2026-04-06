@@ -28,8 +28,35 @@ const HYBRID_CHATBOT_CHAT_BASE_URL = normalizeBaseUrl(
   HYBRID_CHATBOT_BASE_URL
 );
 const HYBRID_CHATBOT_TIMEOUT_MS = Number(
-  process.env.HYBRID_CHATBOT_TIMEOUT_MS || 120000
+  process.env.HYBRID_CHATBOT_TIMEOUT_MS || 0
 );
+const HYBRID_CHATBOT_READY_TIMEOUT_MS = Number(
+  process.env.HYBRID_CHATBOT_READY_TIMEOUT_MS ||
+    process.env.HYBRID_CHATBOT_TIMEOUT_MS ||
+    0
+);
+const HYBRID_CHAT_RETRY_ATTEMPTS = Number(
+  process.env.HYBRID_CHAT_RETRY_ATTEMPTS || 0
+);
+const HYBRID_CHAT_RETRY_DELAY_MS = Number(
+  process.env.HYBRID_CHAT_RETRY_DELAY_MS || 1500
+);
+const HYBRID_UPLOAD_RETRY_ATTEMPTS = Number(
+  process.env.HYBRID_UPLOAD_RETRY_ATTEMPTS || 0
+);
+const HYBRID_UPLOAD_RETRY_DELAY_MS = Number(
+  process.env.HYBRID_UPLOAD_RETRY_DELAY_MS || 2000
+);
+const HYBRID_DOC_IDS_STRATEGY = String(
+  process.env.HYBRID_DOC_IDS_STRATEGY || "merge"
+)
+  .toLowerCase()
+  .trim();
+
+const {
+  isTrivialHybridStyleGreeting,
+  hasSubstantiveDocumentIntent,
+} = require("./workspaceChatContext");
 
 const DOCUMENT_EXT_REGEX = /\.(pdf|doc|docx|xls|xlsx|csv)$/i;
 
@@ -47,18 +74,27 @@ async function fetchWithRetry(url, options = {}, retry = {}) {
       String(err?.message || err || "")
         .toLowerCase()
         .includes("fetch failed") ||
-      String(err?.cause?.code || "").toLowerCase().includes("econnrefused"),
+      String(err?.cause?.code || "")
+        .toLowerCase()
+        .includes("econnrefused"),
   } = retry;
 
+  const maxAttempts = Number(attempts);
+  const infiniteAttempts =
+    !Number.isFinite(maxAttempts) || maxAttempts <= 0 ? true : false;
+
   let lastErr = null;
-  for (let i = 0; i < attempts; i++) {
+  let i = 0;
+  while (infiniteAttempts || i < maxAttempts) {
     try {
       return await fetch(url, options);
     } catch (err) {
       lastErr = err;
-      if (!retryOn(err) || i === attempts - 1) throw err;
+      if (!retryOn(err) || (!infiniteAttempts && i === maxAttempts - 1))
+        throw err;
       await sleep(delayMs);
     }
+    i++;
   }
   throw lastErr ?? new Error("fetch failed");
 }
@@ -66,7 +102,9 @@ async function fetchWithRetry(url, options = {}, retry = {}) {
 async function waitForHybridReady(baseUrl, timeoutMs = 120000) {
   const started = Date.now();
   const readyUrl = `${baseUrl}/ready`;
-  while (Date.now() - started < timeoutMs) {
+  const maxWaitMs = Number(timeoutMs);
+  const waitForever = !Number.isFinite(maxWaitMs) || maxWaitMs <= 0;
+  while (waitForever || Date.now() - started < maxWaitMs) {
     try {
       const res = await fetch(readyUrl, { method: "GET" });
       if (res.ok) {
@@ -81,13 +119,56 @@ async function waitForHybridReady(baseUrl, timeoutMs = 120000) {
   return false;
 }
 
-function hybridSessionKey({ workspace, thread, sessionId, user }) {
-  return [
-    workspace?.id || "unknown-workspace",
-    thread?.id || "no-thread",
-    sessionId || "no-session",
-    user?.id || "anonymous",
-  ].join(":");
+function hybridSessionKey({
+  workspace,
+  thread,
+  sessionId,
+  user,
+  hybridClientSessionId = null,
+}) {
+  const ws = String(workspace?.id ?? "unknown-workspace");
+  const tid = thread?.id != null ? String(thread.id) : "no-thread";
+  let sid;
+  if (thread?.id != null) {
+    sid =
+      sessionId != null && String(sessionId).trim().length > 0
+        ? String(sessionId).trim()
+        : `thread-${thread.id}`;
+  } else {
+    const h =
+      hybridClientSessionId != null ? String(hybridClientSessionId).trim() : "";
+    const s = sessionId != null ? String(sessionId).trim() : "";
+    sid = h || s || "no-session";
+  }
+  const uid = String(user?.id ?? "anonymous");
+  return `${ws}:${tid}:${sid}:${uid}`;
+}
+
+function resolvePythonSessionId({ thread, sessionId, hybridClientSessionId }) {
+  if (thread?.id != null) return String(thread.id);
+  const h =
+    hybridClientSessionId != null ? String(hybridClientSessionId).trim() : "";
+  if (h) return h;
+  const s = sessionId != null ? String(sessionId).trim() : "";
+  if (s) return s;
+  return "default";
+}
+
+/**
+ * Clear hybrid doc_id memory for a workspace (optionally one thread only).
+ */
+function clearHybridDocIdsForWorkspaceKeys({ workspace, thread = null }) {
+  if (!workspace?.id) return;
+  const ws = String(workspace.id);
+  for (const k of [...hybridDocIdsBySession.keys()]) {
+    const parts = k.split(":");
+    if (parts[0] !== ws) continue;
+    if (thread?.id != null) {
+      if (parts[1] === String(thread.id)) hybridDocIdsBySession.delete(k);
+    } else {
+      hybridDocIdsBySession.delete(k);
+    }
+  }
 }
 
 function getHybridDocIdsForSession(key) {
@@ -170,9 +251,10 @@ function hasOnlyWordDocumentAttachments(attachments = []) {
 }
 
 async function uploadAttachmentsToHybridChatbot(attachments = []) {
-  const isReady = await waitForHybridReady(HYBRID_CHATBOT_UPLOAD_BASE_URL).catch(
-    () => false
-  );
+  const isReady = await waitForHybridReady(
+    HYBRID_CHATBOT_UPLOAD_BASE_URL,
+    HYBRID_CHATBOT_READY_TIMEOUT_MS
+  ).catch(() => false);
   if (!isReady)
     throw new Error(
       "Hybrid upload service is not ready yet. Please retry in a moment."
@@ -198,8 +280,8 @@ async function uploadAttachmentsToHybridChatbot(attachments = []) {
         body: form,
       },
       {
-        attempts: 12,
-        delayMs: 2000,
+        attempts: HYBRID_UPLOAD_RETRY_ATTEMPTS,
+        delayMs: HYBRID_UPLOAD_RETRY_DELAY_MS,
       }
     );
     if (!res.ok) {
@@ -212,26 +294,28 @@ async function uploadAttachmentsToHybridChatbot(attachments = []) {
   return uploadedDocIds;
 }
 
-function shouldUseHybridChatbot(message = "", attachments = [], hybridDocIds = []) {
+function shouldUseHybridChatbot(
+  message = "",
+  attachments = [],
+  hybridDocIds = []
+) {
   if (!HYBRID_CHATBOT_ENABLED) return false;
   const msg = String(message || "").trim();
-  const trivialGreeting =
-    msg.length > 0 &&
-    msg.length < 80 &&
-    /^(chào|hi|hello|xin\s*chào|cảm\s*ơn|thanks|ok|oke)\b/i.test(msg);
-
   const pdfLike = hasPdfLikeDocumentAttachment(attachments);
 
   // Word-only attachment → AnythingLLM (Collector / workspace), never 8010.
   if (hasOnlyWordDocumentAttachments(attachments) && !pdfLike) return false;
 
+  if (isTrivialHybridStyleGreeting(msg) && !pdfLike) return false;
+
   if (pdfLike) return true;
 
   const remembered = (hybridDocIds?.length || 0) > 0;
-  if (remembered) {
-    if (trivialGreeting) return false;
-    return true;
-  }
+  // Active PDF session: only route to hybrid when the user likely asks about document content.
+  // Otherwise use the normal workspace LLM so off-topic chat stays natural.
+  if (remembered && !pdfLike && !hasSubstantiveDocumentIntent(msg)) return false;
+
+  if (remembered) return true;
 
   // No PDF/sheet in this message and no active hybrid session → default AnythingLLM.
   return false;
@@ -243,14 +327,19 @@ async function requestHybridChatbot({
   docIds,
   timeoutMs = HYBRID_CHATBOT_TIMEOUT_MS,
 }) {
-  const isReady = await waitForHybridReady(HYBRID_CHATBOT_CHAT_BASE_URL).catch(
-    () => false
-  );
+  const isReady = await waitForHybridReady(
+    HYBRID_CHATBOT_CHAT_BASE_URL,
+    HYBRID_CHATBOT_READY_TIMEOUT_MS
+  ).catch(() => false);
   if (!isReady)
     throw new Error("Hybrid chat service is busy. Please retry in a moment.");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const maxChatWaitMs = Number(timeoutMs);
+  const timeout =
+    Number.isFinite(maxChatWaitMs) && maxChatWaitMs > 0
+      ? setTimeout(() => controller.abort(), maxChatWaitMs)
+      : null;
   try {
     const res = await fetchWithRetry(
       `${HYBRID_CHATBOT_CHAT_BASE_URL}/chat`,
@@ -266,8 +355,8 @@ async function requestHybridChatbot({
         signal: controller.signal,
       },
       {
-        attempts: 12,
-        delayMs: 2000,
+        attempts: HYBRID_CHAT_RETRY_ATTEMPTS,
+        delayMs: HYBRID_CHAT_RETRY_DELAY_MS,
       }
     );
     if (!res.ok) {
@@ -276,7 +365,7 @@ async function requestHybridChatbot({
     }
     return await res.json();
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   }
 }
 
@@ -286,9 +375,16 @@ async function prepareHybridState(
   workspace,
   thread,
   sessionId,
-  user
+  user,
+  hybridClientSessionId = null
 ) {
-  const sessionKey = hybridSessionKey({ workspace, thread, sessionId, user });
+  const sessionKey = hybridSessionKey({
+    workspace,
+    thread,
+    sessionId,
+    user,
+    hybridClientSessionId,
+  });
   const rememberedDocIds = getHybridDocIdsForSession(sessionKey);
   const useHybrid = shouldUseHybridChatbot(
     message,
@@ -297,13 +393,25 @@ async function prepareHybridState(
   );
   const uploadedHybridDocIds = useHybrid
     ? await uploadAttachmentsToHybridChatbot(attachments).catch((error) => {
-        console.warn("[Hybrid Router] upload attachments failed:", error.message);
+        console.warn(
+          "[Hybrid Router] upload attachments failed:",
+          error.message
+        );
         return [];
       })
     : [];
-  const hybridDocIds = mergeHybridDocIds(rememberedDocIds, uploadedHybridDocIds);
-  if (uploadedHybridDocIds.length > 0)
+  let hybridDocIds;
+  if (HYBRID_DOC_IDS_STRATEGY === "replace") {
+    hybridDocIds =
+      uploadedHybridDocIds.length > 0
+        ? mergeHybridDocIds(uploadedHybridDocIds)
+        : mergeHybridDocIds(rememberedDocIds);
+  } else {
+    hybridDocIds = mergeHybridDocIds(rememberedDocIds, uploadedHybridDocIds);
+  }
+  if (useHybrid && uploadedHybridDocIds.length > 0) {
     setHybridDocIdsForSession(sessionKey, hybridDocIds);
+  }
   if (
     !useHybrid &&
     hasOnlyWordDocumentAttachments(attachments) &&
@@ -311,13 +419,20 @@ async function prepareHybridState(
   ) {
     setHybridDocIdsForSession(sessionKey, []);
   }
-  return { useHybrid, hybridDocIds, sessionKey };
+  const pythonSessionId = resolvePythonSessionId({
+    thread,
+    sessionId,
+    hybridClientSessionId,
+  });
+  return { useHybrid, hybridDocIds, sessionKey, pythonSessionId };
 }
 
 module.exports = {
   prepareHybridState,
   requestHybridChatbot,
   hybridSessionKey,
+  resolvePythonSessionId,
+  clearHybridDocIdsForWorkspaceKeys,
   hasOnlyWordDocumentAttachments,
   hasPdfLikeDocumentAttachment,
 };

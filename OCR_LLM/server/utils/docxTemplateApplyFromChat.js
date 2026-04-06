@@ -6,7 +6,9 @@ const {
   suggestSnippetsForFailedFind,
   shouldProcessWordXmlPath,
 } = require("./docxFindReplace");
-const { extractFindReplacePairsFromChatLLM } = require("./extractFindReplacePairsLLM");
+const {
+  extractFindReplacePairsFromChatLLM,
+} = require("./extractFindReplacePairsLLM");
 
 function extractPlainExcerptFromBuffer(buffer, maxLen = 24000) {
   const zip = new PizZip(buffer);
@@ -41,8 +43,12 @@ function titleCaseViWords(s) {
 }
 
 function mirrorPlaceNameCasing(oldSegment, newRaw) {
-  const n = String(newRaw || "").trim().normalize("NFC");
-  const o = String(oldSegment || "").trim().normalize("NFC");
+  const n = String(newRaw || "")
+    .trim()
+    .normalize("NFC");
+  const o = String(oldSegment || "")
+    .trim()
+    .normalize("NFC");
   if (!o || !n) return n;
   if (!/[\p{L}]/u.test(o)) return n;
   const isAllUpper = o === o.toUpperCase() && /[\p{Lu}]/u.test(o);
@@ -79,14 +85,20 @@ function expandPairIfShorthandProvince(pair) {
   const tinhTok = m[2];
   const oldAfterTinh = m[3].replace(/\s+/g, " ").trim();
   const styledNew = mirrorPlaceNameCasing(oldAfterTinh, replace);
-  const expanded = `${prefix}${tinhTok}${styledNew}`.replace(/\s+/g, " ").trim();
+  const expanded = `${prefix}${tinhTok}${styledNew}`
+    .replace(/\s+/g, " ")
+    .trim();
   if (!expanded || expanded === replace) return { find, replace };
   return { find, replace: expanded };
 }
 
 function provinceAdminTailPair(find, replace) {
-  const f = String(find || "").normalize("NFC").trim();
-  const r = String(replace || "").normalize("NFC").trim();
+  const f = String(find || "")
+    .normalize("NFC")
+    .trim();
+  const r = String(replace || "")
+    .normalize("NFC")
+    .trim();
   const reTinh = /tỉnh\s+/iu;
   const idxF = f.search(reTinh);
   const idxR = r.search(reTinh);
@@ -170,12 +182,20 @@ async function applyDocxTemplateFromChat(templateBuffer, ctx = {}) {
 
   for (let i = 0; i < pairs.length; i++) {
     const pair = pairs[i];
-    const variants = expandFindReplaceCandidatesForDocx(pair.find, pair.replace);
+    const variants = expandFindReplaceCandidatesForDocx(
+      pair.find,
+      pair.replace
+    );
     let stepOk = false;
     let lastSnippets = [];
     const lastTried = [];
     for (const { find, replace } of variants) {
-      const { buffer: out, count } = findReplaceInDocxBuffer(current, find, replace, opts);
+      const { buffer: out, count } = findReplaceInDocxBuffer(
+        current,
+        find,
+        replace,
+        opts
+      );
       lastTried.push(find);
       if (count > 0) {
         current = out;

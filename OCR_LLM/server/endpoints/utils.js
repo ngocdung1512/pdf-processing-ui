@@ -12,9 +12,13 @@ function utilEndpoints(app) {
     "/utils/extract-doc-template",
     async function (request, response, next) {
       // Lazy-require to avoid circular dependency issues at module load time
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       const { handleFileUpload } = require("../utils/files/multer");
-      validatedRequest(request, response, () => handleFileUpload(request, response, next));
+      validatedRequest(request, response, () =>
+        handleFileUpload(request, response, next)
+      );
     },
     async function (request, response) {
       try {
@@ -34,7 +38,11 @@ function utilEndpoints(app) {
           const content = extractDocxContent(filePath);
 
           // Clean up the file from hotdir ourselves (collector not involved)
-          try { fs.unlinkSync(filePath); } catch { /* non-fatal */ }
+          try {
+            fs.unlinkSync(filePath);
+          } catch {
+            /* non-fatal */
+          }
 
           if (!content) {
             return response.status(422).json({
@@ -88,7 +96,9 @@ function utilEndpoints(app) {
   app.post(
     "/utils/docx-find-replace",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       const { handleFileUpload } = require("../utils/files/multer");
       validatedRequest(request, response, () =>
         handleFileUpload(request, response, next)
@@ -105,9 +115,11 @@ function utilEndpoints(app) {
         const findRaw = String(request.body?.find ?? "");
         const replace = String(request.body?.replace ?? "");
         const matchCase =
-          request.body?.matchCase === "true" || request.body?.matchCase === true;
+          request.body?.matchCase === "true" ||
+          request.body?.matchCase === true;
         const wholeWord =
-          request.body?.wholeWord === "true" || request.body?.wholeWord === true;
+          request.body?.wholeWord === "true" ||
+          request.body?.wholeWord === true;
         const flexibleWhitespace =
           request.body?.flexibleWhitespace === "false" ||
           request.body?.flexibleWhitespace === false
@@ -152,14 +164,22 @@ function utilEndpoints(app) {
           /* non-fatal */
         }
 
-        const { buffer: outBuf, count } = findReplaceInDocxBuffer(buf, findRaw, replace, {
-          matchCase,
-          wholeWord,
-          flexibleWhitespace,
-        });
+        const { buffer: outBuf, count } = findReplaceInDocxBuffer(
+          buf,
+          findRaw,
+          replace,
+          {
+            matchCase,
+            wholeWord,
+            flexibleWhitespace,
+          }
+        );
 
         if (count === 0) {
-          const textSnippetsFromFile = suggestSnippetsForFailedFind(buf, findRaw);
+          const textSnippetsFromFile = suggestSnippetsForFailedFind(
+            buf,
+            findRaw
+          );
           return response.status(422).json({
             success: false,
             error: "No matches found for the search text.",
@@ -195,12 +215,16 @@ function utilEndpoints(app) {
   app.post(
     "/utils/extract-find-replace-pairs",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (request, response) {
       try {
-        const { extractFindReplacePairsFromChatLLM } = require("../utils/extractFindReplacePairsLLM");
+        const {
+          extractFindReplacePairsFromChatLLM,
+        } = require("../utils/extractFindReplacePairsLLM");
         const {
           userMessage = "",
           assistantMessage = "",
@@ -216,7 +240,9 @@ function utilEndpoints(app) {
         return response.status(200).json({ success: true, pairs });
       } catch (e) {
         console.error("[extract-find-replace-pairs]", e.message);
-        return response.status(500).json({ success: false, error: e.message, pairs: [] });
+        return response
+          .status(500)
+          .json({ success: false, error: e.message, pairs: [] });
       }
     }
   );
@@ -230,12 +256,16 @@ function utilEndpoints(app) {
   app.post(
     "/utils/docx-template-apply-from-chat",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (request, response) {
       try {
-        const { applyDocxTemplateFromChat } = require("../utils/docxTemplateApplyFromChat");
+        const {
+          applyDocxTemplateFromChat,
+        } = require("../utils/docxTemplateApplyFromChat");
         const {
           templateBase64 = "",
           pairedUserMessage = "",
@@ -269,12 +299,15 @@ function utilEndpoints(app) {
           });
         }
 
-        const { buffer: outBuf, totalReplacements, steps } =
-          await applyDocxTemplateFromChat(buf, {
-            pairedUserMessage: String(pairedUserMessage || ""),
-            assistantMessage: String(assistantMessage || ""),
-            conversationContext: String(conversationContext || ""),
-          });
+        const {
+          buffer: outBuf,
+          totalReplacements,
+          steps,
+        } = await applyDocxTemplateFromChat(buf, {
+          pairedUserMessage: String(pairedUserMessage || ""),
+          assistantMessage: String(assistantMessage || ""),
+          conversationContext: String(conversationContext || ""),
+        });
 
         response.set(
           "Content-Type",
@@ -282,7 +315,10 @@ function utilEndpoints(app) {
         );
         response.set("X-Replace-Count", String(totalReplacements));
         response.set("X-Replace-Steps", String(steps));
-        response.set("Content-Disposition", "attachment; filename=template_patched.docx");
+        response.set(
+          "Content-Disposition",
+          "attachment; filename=template_patched.docx"
+        );
         return response.status(200).send(outBuf);
       } catch (e) {
         if (e.code === "NO_PAIRS") {
@@ -325,12 +361,17 @@ function utilEndpoints(app) {
   app.post(
     "/utils/auto-inject-noi-dung",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (request, response) {
       try {
-        const { hasNoiDungMarker, autoInjectNoiDung } = require("../utils/docxNoiDungInjector");
+        const {
+          hasNoiDungMarker,
+          autoInjectNoiDung,
+        } = require("../utils/docxNoiDungInjector");
         const { templateBase64, content } = request.body;
 
         if (!templateBase64 || !content) {
@@ -344,7 +385,9 @@ function utilEndpoints(app) {
 
         // If the marker is already present, nothing to do
         if (hasNoiDungMarker(buf)) {
-          return response.status(200).json({ success: true, alreadyHasMarker: true });
+          return response
+            .status(200)
+            .json({ success: true, alreadyHasMarker: true });
         }
 
         const injectedBuf = await autoInjectNoiDung(buf, content);
@@ -375,7 +418,9 @@ function utilEndpoints(app) {
   app.post(
     "/utils/doc-template-tags",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (request, response) {
@@ -383,7 +428,9 @@ function utilEndpoints(app) {
         const { extractTemplateTags } = require("../utils/docxTemplateFiller");
         const { templateBase64 } = request.body;
         if (!templateBase64) {
-          return response.status(400).json({ success: false, error: "templateBase64 required" });
+          return response
+            .status(400)
+            .json({ success: false, error: "templateBase64 required" });
         }
         const buf = Buffer.from(templateBase64, "base64");
         const tags = extractTemplateTags(buf);
@@ -407,12 +454,18 @@ function utilEndpoints(app) {
   app.post(
     "/utils/auto-tag-template",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (request, response) {
       try {
-        const { templateBase64, content: providedContent, isDoc } = request.body;
+        const {
+          templateBase64,
+          content: providedContent,
+          isDoc,
+        } = request.body;
         if (!templateBase64) {
           return response
             .status(400)
@@ -442,13 +495,19 @@ function utilEndpoints(app) {
           const os = require("os");
           const path = require("path");
           const fs = require("fs");
-          const { extractDocxContent } = require("../utils/docxContentExtractor");
+          const {
+            extractDocxContent,
+          } = require("../utils/docxContentExtractor");
 
           const buf = Buffer.from(templateBase64, "base64");
           const tmpPath = path.join(os.tmpdir(), `auto_tag_${Date.now()}.docx`);
           fs.writeFileSync(tmpPath, buf);
           content = extractDocxContent(tmpPath);
-          try { fs.unlinkSync(tmpPath); } catch { /* non-fatal */ }
+          try {
+            fs.unlinkSync(tmpPath);
+          } catch {
+            /* non-fatal */
+          }
 
           if (!content) {
             return response.status(422).json({
@@ -506,7 +565,9 @@ function utilEndpoints(app) {
   app.post(
     "/utils/fill-doc-template",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (request, response) {
@@ -528,7 +589,10 @@ function utilEndpoints(app) {
           "Content-Type",
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         );
-        response.set("Content-Disposition", 'attachment; filename="report_filled.docx"');
+        response.set(
+          "Content-Disposition",
+          'attachment; filename="report_filled.docx"'
+        );
         return response.send(filledBuf);
       } catch (e) {
         console.error("[fill-doc-template]", e.message);
@@ -546,13 +610,17 @@ function utilEndpoints(app) {
   app.get(
     "/utils/report-formats",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (_request, response) {
       try {
         const { listFormats } = require("../utils/reportFormatStorage");
-        return response.status(200).json({ success: true, formats: listFormats() });
+        return response
+          .status(200)
+          .json({ success: true, formats: listFormats() });
       } catch (e) {
         console.error("[report-formats/list]", e.message);
         return response.sendStatus(500).end();
@@ -567,7 +635,9 @@ function utilEndpoints(app) {
   app.post(
     "/utils/report-formats",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       const { handleFileUpload } = require("../utils/files/multer");
       validatedRequest(request, response, () =>
         handleFileUpload(request, response, next)
@@ -580,21 +650,28 @@ function utilEndpoints(app) {
 
         const { originalname, path: filePath } = request.file;
         if (!originalname.toLowerCase().endsWith(".docx")) {
-          try { fs.unlinkSync(filePath); } catch { /* non-fatal */ }
+          try {
+            fs.unlinkSync(filePath);
+          } catch {
+            /* non-fatal */
+          }
           return response.status(422).json({
             success: false,
-            error: "Only .docx files are supported for the report format library.",
+            error:
+              "Only .docx files are supported for the report format library.",
           });
         }
 
         const buffer = fs.readFileSync(filePath);
-        try { fs.unlinkSync(filePath); } catch { /* non-fatal */ }
+        try {
+          fs.unlinkSync(filePath);
+        } catch {
+          /* non-fatal */
+        }
 
         // Save the raw template — {noi_dung} injection is done client-side
         // in the NoiDungEditor when the user selects the template.
-        const name =
-          request.body?.name ||
-          originalname.replace(/\.docx$/i, "");
+        const name = request.body?.name || originalname.replace(/\.docx$/i, "");
         const entry = saveFormat(name, buffer);
         return response.status(200).json({ success: true, format: entry });
       } catch (e) {
@@ -611,7 +688,9 @@ function utilEndpoints(app) {
   app.delete(
     "/utils/report-formats/:id",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (request, response) {
@@ -642,7 +721,9 @@ function utilEndpoints(app) {
   app.patch(
     "/utils/report-formats/:id/file",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (request, response) {
@@ -677,7 +758,9 @@ function utilEndpoints(app) {
   app.get(
     "/utils/report-formats/:id/preview-html",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (request, response) {
@@ -688,11 +771,15 @@ function utilEndpoints(app) {
         const { id } = request.params;
         const format = getFormat(id);
         if (!format)
-          return response.status(404).json({ success: false, error: "Format not found." });
+          return response
+            .status(404)
+            .json({ success: false, error: "Format not found." });
 
         const html = docxToHtml(format.filePath);
         if (!html)
-          return response.status(422).json({ success: false, error: "Could not render preview." });
+          return response
+            .status(422)
+            .json({ success: false, error: "Could not render preview." });
 
         response.set("Content-Type", "text/html; charset=utf-8");
         response.set("X-Frame-Options", "SAMEORIGIN");
@@ -711,7 +798,9 @@ function utilEndpoints(app) {
   app.get(
     "/utils/report-formats/:id/data",
     async function (request, response, next) {
-      const { validatedRequest } = require("../utils/middleware/validatedRequest");
+      const {
+        validatedRequest,
+      } = require("../utils/middleware/validatedRequest");
       validatedRequest(request, response, next);
     },
     async function (request, response) {

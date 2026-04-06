@@ -72,6 +72,18 @@ export const THOUGHT_REGEX_COMPLETE = new RegExp(
       `<${keyword}\\s*(?:[^>]*?)?\\s*>[\\s\\S]*?<\\/${keyword}\\s*(?:[^>]*?)?>`
   ).join("|")
 );
+
+/** Strip thought / redacted_thinking blocks for export and DOCX context (aligned with UI). */
+export function stripAssistantThoughtForExport(text) {
+  let s = String(text || "");
+  s = s.replace(THOUGHT_REGEX_COMPLETE, "");
+  s = s.replace(/<redacted_thinking>[\s\S]*?<\/redacted_thinking>/gi, "");
+  if (THOUGHT_REGEX_OPEN.test(s) && !THOUGHT_REGEX_CLOSE.test(s)) {
+    s = s.replace(THOUGHT_REGEX_OPEN, "");
+  }
+  return s.trim();
+}
+
 const THOUGHT_PREVIEW_LENGTH = isMobile ? 25 : 50;
 
 /**

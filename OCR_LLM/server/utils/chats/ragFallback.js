@@ -16,11 +16,16 @@ async function appendPermissiveRagIfEmpty({
   embeddingsCount,
   contextTexts,
   sources,
+  skipPermissiveFallback = false,
 }) {
   if (
     String(process.env.RAG_PERMISSIVE_FALLBACK || "true").toLowerCase() ===
     "false"
   ) {
+    return { contextTexts, sources };
+  }
+
+  if (skipPermissiveFallback) {
     return { contextTexts, sources };
   }
 
