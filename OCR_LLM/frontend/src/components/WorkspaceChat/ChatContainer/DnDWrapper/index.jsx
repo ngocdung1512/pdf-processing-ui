@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { v4 } from "uuid";
 import System from "@/models/system";
 import { useDropzone } from "react-dropzone";
@@ -72,6 +72,7 @@ export function DnDFileUploaderProvider({
   const [pendingFiles, setPendingFiles] = useState([]);
   const [tokenCount, setTokenCount] = useState(0);
   const [maxTokens, setMaxTokens] = useState(Number.POSITIVE_INFINITY);
+  const inFlightControllersRef = useRef(new Map());
 
   useEffect(() => {
     System.checkDocumentProcessorOnline().then((status) => setReady(status));
@@ -119,6 +120,11 @@ export function DnDFileUploaderProvider({
   async function handleRemove(event) {
     /** @type {{uid: Attachment['uid'], document: Attachment['document']}} */
     const { uid, document } = event.detail;
+    const controller = inFlightControllersRef.current.get(uid);
+    if (controller) {
+      controller.abort();
+      inFlightControllersRef.current.delete(uid);
+    }
     setFiles((prev) => prev.filter((prevFile) => prevFile.uid !== uid));
     if (!document?.location) return;
     await Workspace.deleteAndUnembedFile(workspace.slug, document.location);
@@ -128,6 +134,8 @@ export function DnDFileUploaderProvider({
    * Clear queue of attached files currently in prompt box
    */
   function resetAttachments() {
+    inFlightControllersRef.current.forEach((controller) => controller.abort());
+    inFlightControllersRef.current.clear();
     setFiles([]);
   }
 
@@ -249,9 +257,12 @@ export function DnDFileUploaderProvider({
       const formData = new FormData();
       formData.append("file", attachment.file, attachment.file.name);
       formData.append("threadSlug", threadSlug || null);
+      const controller = new AbortController();
+      inFlightControllersRef.current.set(attachment.uid, controller);
       promises.push(
-        Workspace.parseFile(workspace.slug, formData)
+        Workspace.parseFile(workspace.slug, formData, controller.signal)
           .then(async ({ response, data }) => {
+            inFlightControllersRef.current.delete(attachment.uid);
             if (!response.ok) {
               const updates = {
                 status: "failed",
@@ -332,6 +343,8 @@ export function DnDFileUploaderProvider({
             }
           })
           .catch((err) => {
+            inFlightControllersRef.current.delete(attachment.uid);
+            if (err?.name === "AbortError") return;
             const msg =
               err?.message ||
               String(err) ||

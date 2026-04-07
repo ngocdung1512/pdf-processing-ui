@@ -50,6 +50,16 @@ function AttachmentItem({ attachment }) {
   if (status === "in_progress") {
     return (
       <div className="relative flex items-center gap-x-1 rounded-lg bg-theme-attachment-bg border-none w-[180px] group">
+        <div className="absolute -top-[5px] -right-[5px] w-fit h-fit z-[10]">
+          <button
+            onClick={removeFileFromQueue}
+            type="button"
+            className="bg-white hover:bg-error hover:text-theme-attachment-text rounded-full p-1 flex items-center justify-center hover:border-transparent border border-theme-attachment-bg"
+            aria-label="Cancel upload"
+          >
+            <X size={10} className="flex-shrink-0" />
+          </button>
+        </div>
         <div
           className={`bg-theme-attachment-icon-spinner-bg rounded-md flex items-center justify-center flex-shrink-0 h-[32px] w-[32px] m-1`}
         >

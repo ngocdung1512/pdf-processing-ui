@@ -300,11 +300,12 @@ const Workspace = {
     const data = await response.json();
     return { response, data };
   },
-  parseFile: async function (slug, formData) {
+  parseFile: async function (slug, formData, signal = undefined) {
     const response = await fetch(`${API_BASE}/workspace/${slug}/parse`, {
       method: "POST",
       body: formData,
       headers: baseHeaders(),
+      signal,
     });
 
     const data = await response.json();
