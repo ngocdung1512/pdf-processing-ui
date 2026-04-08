@@ -1,4 +1,4 @@
-import { FileStack, PenLine, ShieldCheck } from "lucide-react"
+import { CircleAlert, FileStack, PenLine, ShieldCheck } from "lucide-react"
 
 export function HomeHero() {
   return (
@@ -52,16 +52,31 @@ const featurePills = [
 
 export function HomeFeaturePills() {
   return (
-    <ul className="mt-8 md:mt-10 flex flex-col items-stretch gap-2.5 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-3 max-w-5xl mx-auto px-1">
-      {featurePills.map(({ icon: Icon, label, iconClass }) => (
-        <li
-          key={label}
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white/85 px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md hover:border-slate-300/80"
-        >
-          <Icon className={`h-4 w-4 shrink-0 ${iconClass}`} aria-hidden />
-          {label}
-        </li>
-      ))}
-    </ul>
+    <div className="mt-8 md:mt-10 max-w-5xl mx-auto px-1">
+      <ul className="flex flex-col items-stretch gap-2.5 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-3">
+        {featurePills.map(({ icon: Icon, label, iconClass }) => (
+          <li
+            key={label}
+            className="flex items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white/85 px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md hover:border-slate-300/80"
+          >
+            <Icon className={`h-4 w-4 shrink-0 ${iconClass}`} aria-hidden />
+            {label}
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-4 rounded-xl border-2 border-amber-300 bg-amber-50/90 px-4 py-3 text-left shadow-sm">
+        <div className="flex items-start gap-2.5">
+          <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden />
+          <div className="space-y-1">
+            <p className="text-sm font-bold text-amber-900">Lưu ý khi dùng OCR và chatbot</p>
+            <p className="text-sm leading-relaxed text-amber-900/90">
+              Nếu bạn đang mở trợ lý chatbot mà muốn quay lại xử lý OCR, vui lòng tắt chatbot trước rồi mới chạy OCR.
+              Làm vậy giúp máy đỡ quá tải, xử lý ổn định hơn và hạn chế lỗi treo/chậm.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
