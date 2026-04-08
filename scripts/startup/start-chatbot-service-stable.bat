@@ -23,6 +23,7 @@ echo [%date% %time%] Starting chatbot service role=%ROLE% port=%PORT% ...
 cd /d "%PROJECT_ROOT%\services\chatbot"
 set CHATBOT_SERVICE_ROLE=%ROLE%
 set CHATBOT_EMBED_DEVICE=cpu
+set CHATBOT_DOCX_PARSE_MODE=full
 if /I "%ROLE%"=="chat" (
   set CHATBOT_LLM_DEVICE=cpu
   set CHATBOT_PRELOAD_LLM=false

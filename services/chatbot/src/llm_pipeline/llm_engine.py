@@ -1,5 +1,5 @@
 """
-LLM Engine - Load Qwen3-4B and create LangChain Agent.
+LLM Engine - Load configurable chat model and create LangChain Agent.
 
 Handles model loading (RTX 5070 Ti 16GB VRAM),
 and creates a ReAct Agent with tools for chat, compare, and edit.
@@ -167,7 +167,23 @@ Trợ lý:"""
 
 
 def get_model_path() -> str:
-    """Get the default model path."""
+    """
+    Resolve model path/id with env override first.
+
+    Priority:
+      1) CHATBOT_LLM_MODEL
+      2) CHATBOT_LLM_MODEL_PATH (legacy alias)
+      3) Local ./Qwen3-4B folder if exists
+      4) HuggingFace default Qwen/Qwen3-4B
+    """
+    env_model = str(
+        os.environ.get("CHATBOT_LLM_MODEL")
+        or os.environ.get("CHATBOT_LLM_MODEL_PATH")
+        or ""
+    ).strip()
+    if env_model:
+        return env_model
+
     root = Path(__file__).resolve().parent.parent.parent
     local_path = root / "Qwen3-4B"
     if local_path.exists():
@@ -181,7 +197,7 @@ def load_model(
     load_8bit: bool = False,
 ) -> tuple:
     """
-    Load Qwen3-4B model and tokenizer.
+    Load configured model and tokenizer.
     
     Uses same GPU loading pattern as existing Qwen2.5-VL-3B in processs_pdf_to_docs.py.
     """
@@ -193,7 +209,7 @@ def load_model(
     if model_path is None:
         model_path = get_model_path()
     
-    print(f"[LLM Engine] Loading Qwen3-4B from '{model_path}'...")
+    print(f"[LLM Engine] Loading model from '{model_path}'...")
     
     llm_device = str(os.environ.get("CHATBOT_LLM_DEVICE", "auto")).strip().lower()
     use_cpu = llm_device == "cpu"

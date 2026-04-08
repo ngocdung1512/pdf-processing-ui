@@ -250,6 +250,12 @@ function hasOnlyWordDocumentAttachments(attachments = []) {
   return docs.every((a) => isWordLikeAttachmentName(a.name));
 }
 
+function hasAnyWordDocumentAttachment(attachments = []) {
+  const docs = attachments.filter(isDocumentAttachment);
+  if (docs.length === 0) return false;
+  return docs.some((a) => isWordLikeAttachmentName(a.name));
+}
+
 async function uploadAttachmentsToHybridChatbot(attachments = []) {
   const isReady = await waitForHybridReady(
     HYBRID_CHATBOT_UPLOAD_BASE_URL,
@@ -303,8 +309,9 @@ function shouldUseHybridChatbot(
   const msg = String(message || "").trim();
   const pdfLike = hasPdfLikeDocumentAttachment(attachments);
 
-  // Word-only attachment → AnythingLLM (Collector / workspace), never 8010.
-  if (hasOnlyWordDocumentAttachments(attachments) && !pdfLike) return false;
+  // Any Word attachment -> force AnythingLLM/system-default path.
+  // This prevents accidental routing of DOCX flows into 8010.
+  if (hasAnyWordDocumentAttachment(attachments)) return false;
 
   if (isTrivialHybridStyleGreeting(msg) && !pdfLike) return false;
 
@@ -414,7 +421,7 @@ async function prepareHybridState(
   }
   if (
     !useHybrid &&
-    hasOnlyWordDocumentAttachments(attachments) &&
+    hasAnyWordDocumentAttachment(attachments) &&
     attachments.filter(isDocumentAttachment).length > 0
   ) {
     setHybridDocIdsForSession(sessionKey, []);
@@ -434,5 +441,6 @@ module.exports = {
   resolvePythonSessionId,
   clearHybridDocIdsForWorkspaceKeys,
   hasOnlyWordDocumentAttachments,
+  hasAnyWordDocumentAttachment,
   hasPdfLikeDocumentAttachment,
 };
