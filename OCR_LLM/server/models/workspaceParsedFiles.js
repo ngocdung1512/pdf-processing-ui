@@ -6,6 +6,29 @@ const { safeJsonParse } = require("../utils/http");
 const fs = require("fs");
 const path = require("path");
 
+function buildContextWhereClause(workspace, thread = null, user = null) {
+  const base = {
+    workspaceId: workspace.id,
+    ...(user ? { userId: user.id } : {}),
+  };
+
+  // In thread chat, include both:
+  // - files uploaded in this thread
+  // - files uploaded at workspace level (threadId = null)
+  // This avoids missing data when uploads were done outside the active thread.
+  if (thread?.id) {
+    return {
+      ...base,
+      OR: [{ threadId: thread.id }, { threadId: null }],
+    };
+  }
+
+  return {
+    ...base,
+    threadId: null,
+  };
+}
+
 const WorkspaceParsedFiles = {
   create: async function ({
     filename,
@@ -151,11 +174,7 @@ const WorkspaceParsedFiles = {
   ) {
     try {
       if (!workspace) throw new Error("Workspace is required");
-      const files = await this.where({
-        workspaceId: workspace.id,
-        threadId: thread?.id || null,
-        ...(user ? { userId: user.id } : {}),
-      });
+      const files = await this.where(buildContextWhereClause(workspace, thread, user));
 
       const results = [];
       let totalTokens = 0;
@@ -186,15 +205,20 @@ const WorkspaceParsedFiles = {
     }
   },
 
-  getContextFiles: async function (workspace, thread = null, user = null) {
+  getContextFiles: async function (
+    workspace,
+    thread = null,
+    user = null,
+    { latestOnly = false } = {}
+  ) {
     try {
-      const files = await this.where({
-        workspaceId: workspace.id,
-        threadId: thread?.id || null,
-        ...(user ? { userId: user.id } : {}),
-      });
+      const clause = buildContextWhereClause(workspace, thread, user);
+      const files = latestOnly
+        ? await this.where(clause, 1, { id: "desc" })
+        : await this.where(clause);
 
       const results = [];
+      const seenSources = new Set();
       for (const file of files) {
         const metadata = safeJsonParse(file.metadata, {});
         const location = metadata.location;
@@ -209,6 +233,9 @@ const WorkspaceParsedFiles = {
         const content = fs.readFileSync(sourceFile, "utf-8");
         const data = safeJsonParse(content, null);
         if (!data?.pageContent) continue;
+        const sourceKey = String(location).toLowerCase();
+        if (seenSources.has(sourceKey)) continue;
+        seenSources.add(sourceKey);
 
         results.push({
           pageContent: data.pageContent,
@@ -221,6 +248,27 @@ const WorkspaceParsedFiles = {
     } catch (error) {
       console.error("Failed to get context files:", error);
       return [];
+    }
+  },
+
+  countContextFiles: async function (workspace, thread = null, user = null) {
+    try {
+      const clause = buildContextWhereClause(workspace, thread, user);
+      const files = await this.where(clause, null, null, {
+        id: true,
+        metadata: true,
+      });
+      const seenSources = new Set();
+      for (const file of files) {
+        const metadata = safeJsonParse(file.metadata, {});
+        const location = String(metadata?.location || "").trim().toLowerCase();
+        const key = location || `id:${file.id}`;
+        seenSources.add(key);
+      }
+      return seenSources.size;
+    } catch (error) {
+      console.error("Failed to count context files:", error);
+      return 0;
     }
   },
 };

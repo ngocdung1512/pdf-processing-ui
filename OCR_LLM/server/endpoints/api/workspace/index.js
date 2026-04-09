@@ -655,6 +655,7 @@ function apiWorkspaceEndpoints(app) {
           attachments = [],
           reset = false,
           hybridSessionId = null,
+          contextScope = "auto",
         } = reqBody(request);
         const workspace = await Workspace.get({ slug: String(slug) });
 
@@ -693,6 +694,12 @@ function apiWorkspaceEndpoints(app) {
           sessionId: !!sessionId ? String(sessionId) : null,
           attachments,
           reset,
+          contextScope:
+            String(contextScope || "auto").toLowerCase() === "latest"
+              ? "latest"
+              : String(contextScope || "auto").toLowerCase() === "all"
+              ? "all"
+              : "auto",
           hybridSessionId:
             hybridSessionId != null && String(hybridSessionId).trim().length > 0
               ? String(hybridSessionId).trim()
@@ -811,6 +818,7 @@ function apiWorkspaceEndpoints(app) {
           attachments = [],
           reset = false,
           hybridSessionId = null,
+          contextScope = "auto",
         } = reqBody(request);
         const workspace = await Workspace.get({ slug: String(slug) });
 
@@ -856,6 +864,12 @@ function apiWorkspaceEndpoints(app) {
           sessionId: !!sessionId ? String(sessionId) : null,
           attachments,
           reset,
+          contextScope:
+            String(contextScope || "auto").toLowerCase() === "latest"
+              ? "latest"
+              : String(contextScope || "auto").toLowerCase() === "all"
+              ? "all"
+              : "auto",
           hybridSessionId:
             hybridSessionId != null && String(hybridSessionId).trim().length > 0
               ? String(hybridSessionId).trim()

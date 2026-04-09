@@ -55,6 +55,25 @@ class CollectorApi {
     return this.#longRunningAgent;
   }
 
+  async #readJsonSafely(res, fallbackMessage = "Response could not be completed") {
+    const bodyText = await res.text();
+    if (!res.ok) {
+      const reason = bodyText?.trim() || fallbackMessage;
+      throw new Error(reason);
+    }
+
+    if (!bodyText || !bodyText.trim().length) {
+      throw new Error("Collector returned empty response body.");
+    }
+
+    try {
+      return JSON.parse(bodyText);
+    } catch {
+      const compact = bodyText.replace(/\s+/g, " ").trim().slice(0, 240);
+      throw new Error(`Collector returned non-JSON response: ${compact}`);
+    }
+  }
+
   constructor() {
     const { CommunicationKey } = require("../comKey");
     this.comkey = new CommunicationKey();
@@ -93,8 +112,7 @@ class CollectorApi {
   async acceptedFileTypes() {
     return await fetch(`${this.endpoint}/accepts`)
       .then((res) => {
-        if (!res.ok) throw new Error("failed to GET /accepts");
-        return res.json();
+        return this.#readJsonSafely(res, "Failed to GET /accepts");
       })
       .then((res) => res)
       .catch((e) => {
@@ -132,8 +150,7 @@ class CollectorApi {
       dispatcher: this.#getLongRunningAgent(),
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Response could not be completed");
-        return res.json();
+        return this.#readJsonSafely(res);
       })
       .then((res) => res)
       .catch((e) => {
@@ -173,8 +190,7 @@ class CollectorApi {
       dispatcher: this.#getLongRunningAgent(),
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Response could not be completed");
-        return res.json();
+        return this.#readJsonSafely(res);
       })
       .then((res) => res)
       .catch((e) => {
@@ -209,8 +225,7 @@ class CollectorApi {
       dispatcher: this.#getLongRunningAgent(),
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Response could not be completed");
-        return res.json();
+        return this.#readJsonSafely(res);
       })
       .then((res) => res)
       .catch((e) => {
@@ -237,8 +252,7 @@ class CollectorApi {
       dispatcher: this.#getLongRunningAgent(),
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Response could not be completed");
-        return res.json();
+        return this.#readJsonSafely(res);
       })
       .then((res) => res)
       .catch((e) => {
@@ -274,8 +288,7 @@ class CollectorApi {
       body: data,
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Response could not be completed");
-        return res.json();
+        return this.#readJsonSafely(res);
       })
       .then((res) => res)
       .catch((e) => {
@@ -311,8 +324,7 @@ class CollectorApi {
       dispatcher: this.#getLongRunningAgent(),
     })
       .then((res) => {
-        if (!res.ok) throw new Error("Response could not be completed");
-        return res.json();
+        return this.#readJsonSafely(res);
       })
       .then((res) => res)
       .catch((e) => {

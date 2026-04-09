@@ -31,6 +31,7 @@ function chatEndpoints(app) {
           message,
           attachments = [],
           hybridSessionId = null,
+          contextScope = "auto",
         } = reqBody(request);
         const workspace = response.locals.workspace;
 
@@ -74,7 +75,12 @@ function chatEndpoints(app) {
           attachments,
           hybridSessionId != null && String(hybridSessionId).trim().length > 0
             ? String(hybridSessionId).trim()
-            : null
+            : null,
+          String(contextScope || "auto").toLowerCase() === "latest"
+            ? "latest"
+            : String(contextScope || "auto").toLowerCase() === "all"
+            ? "all"
+            : "auto"
         );
         await Telemetry.sendTelemetry("sent_chat", {
           multiUserMode: multiUserMode(response),
@@ -124,6 +130,7 @@ function chatEndpoints(app) {
           message,
           attachments = [],
           hybridSessionId = null,
+          contextScope = "auto",
         } = reqBody(request);
         const workspace = response.locals.workspace;
         const thread = response.locals.thread;
@@ -168,7 +175,12 @@ function chatEndpoints(app) {
           attachments,
           hybridSessionId != null && String(hybridSessionId).trim().length > 0
             ? String(hybridSessionId).trim()
-            : null
+            : null,
+          String(contextScope || "auto").toLowerCase() === "latest"
+            ? "latest"
+            : String(contextScope || "auto").toLowerCase() === "all"
+            ? "all"
+            : "auto"
         );
 
         // If thread was renamed emit event to frontend via special `action` response.
