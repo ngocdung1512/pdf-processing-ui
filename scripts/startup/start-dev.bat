@@ -1,6 +1,19 @@
 @echo off
-REM Change to project root directory (parent of scripts\startup\)
+REM Default: no server console windows — only opens the web UI (logs: scripts\startup\logs\quiet\).
+REM For the old multi-window dev experience:   start-dev.bat console
+
+if /I "%~1"=="console" goto CONSOLE
+
+cd /d "%~dp0"
+wscript //nologo "%~dp0start-dev-launcher.vbs"
+exit /b 0
+
+:CONSOLE
 cd /d "%~dp0\..\.."
+
+REM UTF-8 for Python (Windows cp1252 cannot print Unicode checkmarks in OCR logs)
+set PYTHONUTF8=1
+set PYTHONIOENCODING=utf-8
 
 echo ========================================
 echo  PDF Processing UI - Development Server
@@ -15,7 +28,7 @@ if exist "conversion_env\Scripts\activate.bat" (
 
 REM Start backend in new window
 echo [1/3] Starting Backend FastAPI on port 8000...
-start "FastAPI Backend - Port 8000" cmd /k "cd /d %CD% && if exist conversion_env\Scripts\activate.bat (call conversion_env\Scripts\activate.bat) && uvicorn ocr_app.api:app --port 8000 --reload"
+start "FastAPI Backend - Port 8000" cmd /k "cd /d %CD% && set PYTHONUTF8=1&& set PYTHONIOENCODING=utf-8&& if exist conversion_env\Scripts\activate.bat (call conversion_env\Scripts\activate.bat) && uvicorn ocr_app.api:app --port 8000 --reload"
 
 REM Wait for backend to initialize
 echo [2/3] Waiting for backend to start...
@@ -68,4 +81,3 @@ echo Both servers are running in separate windows.
 echo Close those windows to stop the servers.
 echo.
 pause
-

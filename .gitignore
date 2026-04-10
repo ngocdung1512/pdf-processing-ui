@@ -111,3 +111,6 @@ Tuấn T07/
 # Orphan dirs at repo root after Python services moved under services/ (runtime locks may leave these)
 /chatbot/
 /pdf_processing/
+
+# Quiet dev launcher logs (start-dev-quiet.ps1)
+scripts/startup/logs/

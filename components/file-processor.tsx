@@ -767,16 +767,14 @@ function AdvancedOcrCard({ isLocked, onLock, onUnlock }: OcrCardProps) {
               </p>
             )}
             <Progress value={progress} className="h-3 rounded-full bg-gray-100 border border-gray-200" />
-            {pdfType === "scan" && progressInfo && (
-              <p className="text-[11px] text-gray-500 italic">
-                Recognizing Text: {progressInfo.current}/{progressInfo.total} pages
+            {progressInfo && progressInfo.total > 0 && (
+              <p className="text-[11px] text-gray-600 font-medium">
+                Đang xử lý trang: {progressInfo.current}/{progressInfo.total}
+                {pdfType === "text" ? " (ước lượng)" : ""}
               </p>
             )}
-            {pdfType === "scan" && !progressInfo && (
+            {(!progressInfo || progressInfo.total <= 0) && (
               <p className="text-[11px] text-gray-500 italic">Đang khởi tạo quá trình xử lý...</p>
-            )}
-            {pdfType === "text" && (
-              <p className="text-[11px] text-gray-500 italic">Đang chuyển đổi và giữ nguyên bố cục...</p>
             )}
             {elapsedTime > 0 && (
               <p className="text-[11px] text-gray-600">

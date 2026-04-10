@@ -13,6 +13,16 @@ from subprocess import Popen, PIPE, STDOUT, DEVNULL
 import subprocess
 import socket
 
+# Windows: OCR subprocesses print Unicode (e.g. checkmark U+2713). Default stdout may be cp1252
+# when piped or redirected (e.g. quiet start-dev logs), causing UnicodeEncodeError on print().
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr):
+        if _stream is not None and hasattr(_stream, "reconfigure"):
+            try:
+                _stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
 # Import PyMuPDF for PDF detection
 try:
     import fitz  # PyMuPDF
@@ -128,6 +138,19 @@ def detect_pdf_type(pdf_path: Path) -> str:
         return "scan"
 
 
+def get_pdf_page_count(pdf_path: Path) -> int:
+    """Get total page count for UI progress display."""
+    if not fitz:
+        return 0
+    try:
+        doc = fitz.open(pdf_path)
+        total = int(doc.page_count or 0)
+        doc.close()
+        return total
+    except Exception:
+        return 0
+
+
 def process_pdf_background(job_id: str, pdf_path: Path, output_docx: Path, pdf_type: str):
     """Process PDF in background thread"""
     start_time = time.time()
@@ -183,17 +206,19 @@ def process_pdf_background(job_id: str, pdf_path: Path, output_docx: Path, pdf_t
         print(f"[INFO] Job {job_id}: Output path: {output_docx}", flush=True)
 
         # ===============================
-        # Regex for OCR phases (only for scan PDFs)
+        # Regex for OCR phases (scan PDFs)
         # ===============================
+        # convert_keep_layout.py / legacy
         pdf_info_pattern = re.compile(r"--- PDF Info: (\d+) pages ---")
-        layout_pattern = re.compile(r"Recognizing Layout")
+        # convert_pdf_gpu.py -> process_pdf_to_docx.py prints this per page (real progress)
+        processing_page_pattern = re.compile(
+            r"Processing page\s+(\d+)\s*/\s*(\d+)", re.IGNORECASE
+        )
+        # Early pipeline steps (process_pdf_to_docx.py)
+        layout_pattern = re.compile(r"\[Step 5\]\s*Processing pages", re.IGNORECASE)
         ocr_error_pattern = re.compile(r"OCR Error Detection")
-        bbox_pattern = re.compile(r"Detecting bboxes")
-        # Match formats like:
-        # - "Recognizing Text: 0% | 0/40 [time]"
-        # - "Recognizing Text: 2%|2 | 1/40 [time]"
-        # - "Recognizing Text: 18%|#7 | 7/40 [time]"
-        # Only match lines that start with "Recognizing Text:" and have progress bar format
+        bbox_pattern = re.compile(r"Detecting bboxes", re.IGNORECASE)
+        # Legacy/alternate OCR tqdm-style lines (keep as fallback)
         text_pattern = re.compile(r"^Recognizing Text:\s*\d+%.*?(\d+)\s*/\s*(\d+)")
         
         # For text PDFs (convert_keep_layout.py)
@@ -220,67 +245,135 @@ def process_pdf_background(job_id: str, pdf_path: Path, output_docx: Path, pdf_t
             cwd=str(REPO_ROOT),
         )
 
-        for line in process.stdout:
-            print(line, end="", flush=True)
-            
-            # Skip if job is already done
-            if JOB_STATUS.get(job_id) == "done":
-                continue
+        # Text PDF: pdf2docx may print nothing for a long time during convert — stdout loop
+        # would not run, so progress would freeze. Heartbeat updates percent/current from elapsed.
+        stop_heartbeat = threading.Event()
 
-            # Update elapsed time
-            elapsed = time.time() - start_time
-            JOB_PROGRESS[job_id]["elapsed_time"] = elapsed
+        def _heartbeat_text_progress() -> None:
+            while not stop_heartbeat.wait(0.5):
+                if JOB_STATUS.get(job_id) != "running":
+                    break
+                if process.poll() is not None:
+                    break
+                if pdf_type != "text":
+                    continue
+                total_pages = int(JOB_PROGRESS[job_id].get("total") or 0)
+                if total_pages <= 0:
+                    continue
+                elapsed = time.time() - start_time
+                JOB_PROGRESS[job_id]["elapsed_time"] = elapsed
+                estimated_time_per_page = 2.0
+                estimated_total_time = total_pages * estimated_time_per_page
+                current_percent = int(JOB_PROGRESS[job_id].get("percent") or 0)
+                if current_percent >= 95:
+                    continue
+                if elapsed < estimated_total_time:
+                    progress_estimate = 30 + int((elapsed / max(estimated_total_time, 1)) * 65)
+                else:
+                    progress_estimate = 95
+                progress_estimate = min(progress_estimate, 95)
+                if progress_estimate < current_percent:
+                    continue
+                JOB_PROGRESS[job_id]["percent"] = progress_estimate
+                progress_ratio = max(progress_estimate - 30, 0) / 65.0
+                estimated_current = int(round(progress_ratio * total_pages))
+                estimated_current = min(max(estimated_current, 1), total_pages)
+                JOB_PROGRESS[job_id]["current"] = estimated_current
 
-            if pdf_type == "scan":
-                # ----- For SCAN PDFs: Parse OCR progress -----
-                # Parse PDF info at start
-                m_info = pdf_info_pattern.search(line)
-                if m_info:
-                    total_pages = int(m_info.group(1))
-                    # Set total from PDF Info - this is the source of truth
-                    JOB_PROGRESS[job_id]["total"] = total_pages
-                    JOB_PROGRESS[job_id]["percent"] = 1
+        hb_thread = None
+        if pdf_type == "text":
+            hb_thread = threading.Thread(target=_heartbeat_text_progress, daemon=True)
+            hb_thread.start()
+
+        try:
+            for line in process.stdout:
+                print(line, end="", flush=True)
+
+                # Skip if job is already done
+                if JOB_STATUS.get(job_id) == "done":
                     continue
 
-                # Phase-based progress
-                if layout_pattern.search(line):
-                    JOB_PROGRESS[job_id]["percent"] = 5
+                # Update elapsed time
+                elapsed = time.time() - start_time
+                JOB_PROGRESS[job_id]["elapsed_time"] = elapsed
 
-                elif ocr_error_pattern.search(line):
-                    JOB_PROGRESS[job_id]["percent"] = 10
+                if pdf_type == "scan":
+                    # ----- For SCAN PDFs: Parse OCR progress -----
+                    m_info = pdf_info_pattern.search(line)
+                    if m_info:
+                        total_pages = int(m_info.group(1))
+                        JOB_PROGRESS[job_id]["total"] = total_pages
+                        JOB_PROGRESS[job_id]["percent"] = 1
+                        continue
 
-                elif bbox_pattern.search(line):
-                    JOB_PROGRESS[job_id]["percent"] = 15
-
-                # Real page-based progress
-                # Only process if line contains "Recognizing Text:" to avoid false matches
-                if "Recognizing Text:" in line:
-                    m = text_pattern.search(line.strip())  # Strip to handle line breaks
-                    if m:
-                        current = int(m.group(1))
-                        total_from_log = int(m.group(2))
-                        
-                        # ALWAYS use total from PDF Info if available (source of truth)
-                        current_total = JOB_PROGRESS[job_id].get("total", 0)
+                    # Primary: process_pdf_to_docx prints "Processing page X/Y"
+                    m_pp = processing_page_pattern.search(line)
+                    if m_pp:
+                        current = int(m_pp.group(1))
+                        total_from_log = int(m_pp.group(2))
+                        current_total = int(JOB_PROGRESS[job_id].get("total") or 0)
                         if current_total > 0:
                             total = current_total
                             current = min(current, total)
                         else:
                             total = total_from_log
                             JOB_PROGRESS[job_id]["total"] = total
-                            print(f"[INFO] Job {job_id}: Using total from log: {total}", flush=True)
-                        
-                        # Progress: 15% (initial phases) + up to 85% based on pages
+
                         if total > 0:
                             percent = 15 + int((current / total) * 85)
                         else:
                             percent = 15
-
                         JOB_PROGRESS[job_id].update({
                             "current": current,
-                            "percent": min(percent, 99)
+                            "percent": min(percent, 99),
                         })
-                        print(f"[PROGRESS] Job {job_id}: {current}/{total} pages ({percent}%)", flush=True)
+                        print(
+                            f"[PROGRESS] Job {job_id}: page {current}/{total} ({min(percent, 99)}%)",
+                            flush=True,
+                        )
+                        continue
+
+                    # Phase-based progress (before first page line)
+                    if layout_pattern.search(line):
+                        JOB_PROGRESS[job_id]["percent"] = max(
+                            int(JOB_PROGRESS[job_id].get("percent") or 0), 5
+                        )
+
+                    elif ocr_error_pattern.search(line):
+                        JOB_PROGRESS[job_id]["percent"] = max(
+                            int(JOB_PROGRESS[job_id].get("percent") or 0), 10
+                        )
+
+                    elif bbox_pattern.search(line):
+                        JOB_PROGRESS[job_id]["percent"] = max(
+                            int(JOB_PROGRESS[job_id].get("percent") or 0), 15
+                        )
+
+                    # Fallback: older tqdm-style "Recognizing Text:"
+                    if "Recognizing Text:" in line:
+                        m = text_pattern.search(line.strip())
+                        if m:
+                            current = int(m.group(1))
+                            total_from_log = int(m.group(2))
+                            current_total = int(JOB_PROGRESS[job_id].get("total") or 0)
+                            if current_total > 0:
+                                total = current_total
+                                current = min(current, total)
+                            else:
+                                total = total_from_log
+                                JOB_PROGRESS[job_id]["total"] = total
+                                print(f"[INFO] Job {job_id}: Using total from log: {total}", flush=True)
+
+                            if total > 0:
+                                percent = 15 + int((current / total) * 85)
+                            else:
+                                percent = 15
+
+                            JOB_PROGRESS[job_id].update({
+                                "current": current,
+                                "percent": min(percent, 99)
+                            })
+                            print(f"[PROGRESS] Job {job_id}: {current}/{total} pages ({percent}%)", flush=True)
             
             else:
                 # ----- For TEXT PDFs: Simple progress tracking -----
@@ -323,16 +416,26 @@ def process_pdf_background(job_id: str, pdf_path: Path, output_docx: Path, pdf_t
                         progress_estimate = min(progress_estimate, 95)  # Cap at 95% until done
                         if progress_estimate > current_percent:
                             JOB_PROGRESS[job_id]["percent"] = progress_estimate
+                            # Text-PDF pipeline does not emit real per-page progress.
+                            # Expose an estimated current page so frontend can show x/y pages.
+                            progress_ratio = max(progress_estimate - 30, 0) / 65.0
+                            estimated_current = int(round(progress_ratio * total_pages))
+                            estimated_current = min(max(estimated_current, 1), total_pages)
+                            JOB_PROGRESS[job_id]["current"] = estimated_current
                             print(f"[PROGRESS] Job {job_id}: Text PDF progress {progress_estimate}% (elapsed: {elapsed:.1f}s, estimated: {estimated_total_time:.1f}s)", flush=True)
                 elif current_percent < 30:
                     # If no total yet, at least show we're starting
                     JOB_PROGRESS[job_id]["percent"] = 20
+
+        finally:
+            stop_heartbeat.set()
 
         process.wait()
 
         if process.returncode == 0:
             elapsed_total = time.time() - start_time
             JOB_PROGRESS[job_id].update({
+                "current": JOB_PROGRESS[job_id].get("total", JOB_PROGRESS[job_id].get("current", 0)),
                 "percent": 100,
                 "elapsed_time": elapsed_total
             })
@@ -467,10 +570,13 @@ async def convert_pdf(file: UploadFile = File(...)):
     print(f"[INFO] Job {job_id}: Detected PDF type: {pdf_type_display} (took {detection_time:.2f}s)", flush=True)
     print(f"[INFO] Job {job_id}: File will be processed with {'OCR (convert_pdf_gpu.py)' if pdf_type == 'scan' else 'Direct conversion (convert_keep_layout.py)'}", flush=True)
 
+    # Preload total pages so frontend can always show x/y pages early.
+    total_pages = get_pdf_page_count(pdf_path)
+
     # Initialize job status
     JOB_PROGRESS[job_id] = {
         "current": 0,
-        "total": 0,
+        "total": total_pages,
         "percent": 0,
         "elapsed_time": 0,
         "start_time": 0,
