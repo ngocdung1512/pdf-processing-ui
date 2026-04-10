@@ -1,72 +1,55 @@
-# Hướng dẫn cài trên máy mới (làm theo từng bước)
+# Huong dan cai dat may moi (A-Z, ban moi nhat)
 
-Tài liệu này dành cho trường hợp cài mới hoàn toàn.  
-Chỉ cần làm đúng thứ tự từ trên xuống là chạy được app.
-
----
-
-## 0) Kết quả mong muốn sau khi cài xong
-
-- Mở app chính tại `http://localhost:3000`
-- Backend chạy tại `http://localhost:8000`
-- (Tùy chọn) Chatbot AnythingLLM chạy tại `http://localhost:3002`
-- Chế độ OCR nâng cao dùng được với model Qwen local
+Tai lieu nay duoc viet de "lam 1 lan la chay duoc", danh cho may moi hoan toan.
+Chi can lam dung thu tu tu tren xuong duoi.
 
 ---
 
-## 1) Cài phần mềm nền tảng (chỉ làm 1 lần/máy)
+## 0) Ket qua mong muon sau khi cai xong
 
-### 1.1 Cài Git
+- Frontend chay duoc: `http://localhost:3000`
+- OCR backend chay duoc: `http://localhost:8000`
+- Chatbot UI AnythingLLM (tuy chon) chay duoc: `http://localhost:3002`
+- PDF bridge cho chatbot (tuy chon) health OK: `http://127.0.0.1:8001/health`
+- OCR nang cao dung duoc Qwen local + DocLayout-YOLO
 
-- Download: [https://git-scm.com/download/win](https://git-scm.com/download/win)
-- Kiểm tra:
+---
+
+## 1) Cai phan mem nen tang (lam 1 lan/may)
+
+### 1.1 Git + Git LFS (bat buoc)
 
 ```powershell
 git --version
-```
-
-### 1.2 Cài Git LFS (bắt buộc)
-
-Model `.pt` trong repo dùng Git LFS, thiếu bước này sẽ clone không đủ file.
-
-- Download: [https://git-lfs.com/](https://git-lfs.com/)
-- Chạy 1 lần:
-
-```powershell
+git lfs version
 git lfs install
 ```
 
-### 1.3 Cài Python 3.11+
+Neu chua co:
+- Git: [https://git-scm.com/download/win](https://git-scm.com/download/win)
+- Git LFS: [https://git-lfs.com/](https://git-lfs.com/)
 
-- Download: [https://www.python.org/downloads/](https://www.python.org/downloads/)
-- Khi cài nhớ tick `Add Python to PATH`
-- Kiểm tra:
+### 1.2 Python 3.11+ (khuyen nghi 3.11)
 
 ```powershell
 python --version
 pip --version
 ```
 
-Nếu máy dùng launcher:
+Neu khong nhan `python`, thu:
 
 ```powershell
 py --version
 ```
 
-### 1.4 Cài Node.js 18+ (LTS)
-
-- Download: [https://nodejs.org/](https://nodejs.org/)
-- Kiểm tra:
+### 1.3 Node.js 18+ (LTS)
 
 ```powershell
 node --version
 npm --version
 ```
 
-### 1.5 (Khuyên dùng) Cài Ollama cho Chatbot local
-
-- Download: [https://ollama.com/download](https://ollama.com/download)
-- Kiểm tra:
+### 1.4 Ollama (khuyen dung cho chatbot local)
 
 ```powershell
 ollama --version
@@ -74,11 +57,9 @@ ollama --version
 
 ---
 
-## 2) Clone project và cài dependency
+## 2) Clone repo dung cach (de du file model)
 
-> Ví dụ dưới đây dùng thư mục `D:\work`. Bạn có thể đổi sang nơi khác.
-
-### 2.1 Clone repo
+> Vi du dung thu muc `D:\work`, ban co the doi duong dan.
 
 ```powershell
 cd D:\work
@@ -86,53 +67,87 @@ git clone https://github.com/ngocdung1512/pdf-processing-ui.git
 cd pdf-processing-ui
 ```
 
-Kiểm tra có file model YOLO đi kèm:
+Kiem tra nhanh file quan trong:
 
 ```powershell
-dir doclayout_yolo_docstructbench_imgsz1024.pt
+dir .\doclayout_yolo_docstructbench_imgsz1024.pt
 ```
 
-Nếu không thấy file này: cài lại Git LFS, rồi clone lại repo.
+Neu thieu file lon sau khi clone, thu lai quy trinh `git lfs install` roi clone lai.
 
-### 2.2 Tạo virtual environment Python
+---
+
+## 3) Tao venv Python va cai dependency (phan quan trong nhat)
+
+### 3.1 Tao + kich hoat venv goc
 
 ```powershell
 python -m venv conversion_env
 .\conversion_env\Scripts\Activate.ps1
 ```
 
-Nếu PowerShell chặn script:
+Neu PowerShell chan script:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-### 2.3 Cài thư viện Python
+### 3.2 Cai PyTorch dung theo GPU/CPU (bat buoc theo trang thai hien tai)
+
+Chay trong `conversion_env`:
+
+#### Truong hop A - NVIDIA RTX 50 series (5060/5070, sm_120)
+
+```powershell
+pip uninstall torch torchvision torchaudio -y
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+```
+
+#### Truong hop B - NVIDIA RTX 30/40 (hoac GPU NVIDIA khac)
+
+```powershell
+pip uninstall torch torchvision torchaudio -y
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+```
+
+#### Truong hop C - CPU only
+
+Bo qua buoc cai torch rieng, cai thang requirements.
+
+### 3.3 Cai thu vien Python goc
 
 ```powershell
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 2.4 Cài DocLayout-YOLO (bắt buộc nếu dùng OCR nâng cao)
+---
 
-Trong root project (cùng cấp thư mục `ocr_app/` — FastAPI ở `ocr_app/api.py`):
+## 4) Cai DocLayout-YOLO (can cho OCR nang cao scan)
+
+Tu root repo `pdf-processing-ui`:
 
 ```powershell
 git clone https://github.com/naver-ai/doclayout.git DocLayout-YOLO
 pip install -e .\DocLayout-YOLO
 ```
 
-### 2.5 Cài frontend dependency
+> Neu da co thu muc `DocLayout-YOLO` thi bo qua clone, chi can `pip install -e`.
 
-Mở terminal mới (không cần bật venv):
+---
+
+## 5) Cai frontend + chatbot stack
+
+### 5.1 Frontend
+
+Mo terminal moi tai root project (khong can kich hoat Python):
 
 ```powershell
 cd D:\work\pdf-processing-ui
 npm install
 ```
 
-### 2.6 (Tùy chọn) Cài chatbot dependency
+### 5.2 Chatbot (AnythingLLM) - tuy chon nhung nen cai
 
 ```powershell
 npm install -g yarn
@@ -141,132 +156,71 @@ npm run chatbot:setup
 
 ---
 
-## 3) Model OCR nâng cao (Qwen2.5-VL-3B) - trạng thái hiện tại
+## 6) Model can co tren may moi
 
-Theo setup của bạn hiện tại, model OCR nâng cao đã có sẵn trong project:
+### 6.1 OCR model
 
-- `Qwen2.5-VL-3B` (root project)
+- Uu tien su dung local model tai root: `Qwen2.5-VL-3B`
+- Neu chua co, co the tai tu HF:
 
-=> Khi cài máy mới, nếu bạn đã copy/clone đầy đủ thư mục này thì **không cần tải lại**.
+```powershell
+pip install -U "huggingface_hub[cli]"
+huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct --local-dir Qwen2.5-VL-3B
+```
 
-Chỉ khi thiếu thư mục model mới cần tải thêm từ Hugging Face.
+### 6.2 YOLO model
 
-Nếu muốn đặt model ở ổ khác (ví dụ `E:\AI_Models\Qwen2.5-VL-3B`), truyền tham số:
+- Can file: `doclayout_yolo_docstructbench_imgsz1024.pt` (dat o root)
 
-- `--ocr-model E:\AI_Models\Qwen2.5-VL-3B`
+### 6.3 Chat model cho AnythingLLM
+
+Neu dung Ollama:
+
+```powershell
+ollama pull qwen2.5:7b
+ollama list
+```
 
 ---
 
-## 4) Chạy ứng dụng
+## 7) Chay he thong
 
-### 4.1 Cách dễ nhất
-
-- Double click file `start-dev.bat` ở root project
-
-Script sẽ tự mở backend + frontend (+ chatbot core nếu có setup).
-
-### 4.2 Cách chạy bằng lệnh
+### Cach de nhat
 
 ```powershell
 cd D:\work\pdf-processing-ui
 .\start-dev.bat
 ```
 
-Mở trình duyệt:
+Script nay se mo backend + frontend (+ chatbot core neu da setup).
 
-- `http://localhost:3000`
+### URL can test
 
----
-
-## 5) Setup model cho Chatbot (AnythingLLM)
-
-Phần này mới là phần bạn cần cho máy mới: model Qwen dùng để chat trong AnythingLLM.
-
-### 5.1 Nếu bạn chạy Chatbot bằng Ollama (khuyên dùng local)
-
-Sau khi cài Ollama, kéo model chat về máy:
-
-```powershell
-ollama pull qwen2.5:7b
-```
-
-Kiểm tra:
-
-```powershell
-ollama list
-```
-
-Nếu `Workspace Chat model` trống:
-
-1. Kiểm tra `ollama list` có model chưa
-2. Đảm bảo Ollama service đang chạy
-3. Reload trang AnythingLLM
-4. Provider phải là `Ollama`
-
-### 5.2 Nếu bạn dùng model Qwen tự host từ Hugging Face
-
-Vì model này là của bạn đẩy lên Hugging Face, tài liệu mẫu cho 4 model đã được thêm ở:
-
-- [MODELS_TO_DOWNLOAD.md](./MODELS_TO_DOWNLOAD.md) → mục `Chatbot Qwen models (4 models you pushed to Hugging Face)`
-
-Trên máy mới, chỉ cần thay ID thật rồi chạy đúng các lệnh `snapshot_download`.
-
-Bạn có thể điền lại nhanh theo template:
-
-- HF repo: `<YOUR_HF_REPO_FOR_CHATBOT>`
-- Cách load: `<OLLAMA / VLLM / LM STUDIO / endpoint URL>`
-- Tên model hiển thị trong AnythingLLM: `<MODEL_NAME_SHOWN_IN_WORKSPACE_CHAT_MODEL>`
-- API key/token (nếu có): `<WHERE_TO_SET>`
-
-Khuyến nghị: lưu rõ mapping vào một bảng trong tài liệu nội bộ để máy mới chỉ copy y chang.
+- Frontend: `http://localhost:3000`
+- OCR API docs: `http://localhost:8000/docs`
+- Chatbot: `http://localhost:3002`
+- PDF bridge health: `http://127.0.0.1:8001/health`
 
 ---
 
-## 6) Cần đổi đường dẫn thì đổi ở đâu?
+## 8) Checklist verify sau cai (de chac chan "hoan chinh")
 
-Phần này là checklist nhanh khi chuyển máy/đổi ổ đĩa.
+Trong root project:
 
-### 6.1 Đường dẫn model Qwen OCR (PDF OCR nâng cao)
+```powershell
+# Python env
+.\conversion_env\Scripts\python.exe --version
+.\conversion_env\Scripts\python.exe -c "import torch; print(torch.__version__)"
 
-- File: `ocr_app/process_pdf_to_docx.py`
-- Biến mặc định: `ocr_model_path`
-- Mặc định hiện tại: `./Qwen2.5-VL-3B`
+# OCR related
+.\conversion_env\Scripts\python.exe -c "import fitz,cv2,docx,paddleocr,transformers; print('python deps ok')"
 
-Bạn có thể:
-
-- Giữ nguyên và đặt model đúng thư mục này.
-- Hoặc truyền `--ocr-model <duong_dan_moi>`.
-
-### 6.2 Đường dẫn model YOLO layout
-
-- File: `ocr_app/process_pdf_to_docx.py`
-- Biến mặc định: `model_path`
-- Mặc định hiện tại: `./doclayout_yolo_docstructbench_imgsz1024.pt`
-
-### 6.3 URL API cho frontend chatbot
-
-- File: `OCR_LLM/frontend/.env`
-- Giá trị cần có:
-
-```env
-VITE_API_BASE=http://localhost:4101/api
+# Frontend
+node --version
+npm --version
 ```
 
-### 6.4 Nơi cấu hình provider/model cho chatbot
-
-- Trong UI AnythingLLM:
-  - `Settings -> LLM Preferences` (system level)
-  - `Workspace Settings -> Chat Settings` (workspace level)
-- Mục cần chọn:
-  - Provider (`Ollama` hoặc provider bạn dùng)
-  - Model tương ứng (danh sách `Workspace Chat model`)
-
-### 6.5 Script download model phụ
-
-- File: `scripts/download-missing-models.ps1`
-- Script này tải `vgg_transformer.pth` + warm up PaddleOCR cache
-
-Chạy:
+Neu muon warm-up model phu:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\download-missing-models.ps1
@@ -274,53 +228,51 @@ powershell -ExecutionPolicy Bypass -File .\scripts\download-missing-models.ps1
 
 ---
 
-## 7) Trình tự cài nhanh (copy/paste cho máy mới)
+## 9) Prompt mau de dua cho Cursor Agent (copy/paste)
 
-```powershell
-# 1) Clone
-cd D:\work
-git lfs install
-git clone https://github.com/ngocdung1512/pdf-processing-ui.git
-cd pdf-processing-ui
+Su dung prompt duoi day o may moi de agent tu kiem tra va cai dat theo tai lieu nay:
 
-# 2) Python env
-python -m venv conversion_env
-.\conversion_env\Scripts\Activate.ps1
-pip install --upgrade pip
-pip install -r requirements.txt
+```text
+Hay mo file docs/HUONG_DAN_CAI_DAT_MAY_MOI.md va thuc hien dung tung buoc tu tren xuong duoi de cai dat full tren may moi.
 
-# 3) Frontend
-npm install
+Yeu cau:
+1) Kiem tra toolchain truoc (git, git lfs, python, node, npm, ollama).
+2) Tao/kich hoat conversion_env.
+3) Chon dung nhanh cai PyTorch:
+   - RTX 50 (5060/5070): nightly cu128.
+   - RTX 30/40: cu124 stable.
+   - CPU only: bo qua cai torch rieng.
+4) Cai pip install -r requirements.txt o root.
+5) Dam bao DocLayout-YOLO duoc cai editable.
+6) Cai npm install va npm run chatbot:setup.
+7) Kiem tra model/weight quan trong (Qwen2.5-VL-3B, doclayout_yolo_docstructbench_imgsz1024.pt).
+8) Chay start-dev.bat.
+9) Bao cao ket qua theo checklist URL:
+   - http://localhost:3000
+   - http://localhost:8000/docs
+   - http://localhost:3002
+   - http://127.0.0.1:8001/health
 
-# 4) Chatbot setup (optional)
-npm install -g yarn
-npm run chatbot:setup
-
-# 5) OCR model Qwen2.5-VL-3B đã có sẵn theo setup hiện tại (skip nếu đã có)
-
-# 6) Ollama model for chatbot (optional but recommended)
-ollama pull qwen2.5:7b
-
-# 7) Run app
-.\start-dev.bat
+Neu buoc nao loi, tu sua va chay lai den khi dat day du 4 URL tren.
 ```
 
 ---
 
-## 8) Lỗi thường gặp
+## 10) Loi thuong gap va cach xu ly nhanh
 
-| Hiện tượng | Nguyên nhân thường gặp | Cách xử lý nhanh |
+| Hien tuong | Nguyen nhan thuong gap | Cach xu ly nhanh |
 |---|---|---|
-| Double click `start-dev.bat` nhưng lỗi | Chạy sai file `.bat` hoặc sai thư mục | Chạy file `start-dev.bat` ở root project |
-| `Workspace Chat model` trống | Ollama chưa có model hoặc chưa chạy | `ollama list`, rồi `ollama pull ...`, reload AnythingLLM |
-| OCR nâng cao báo không thấy Qwen | Thiếu thư mục `Qwen2.5-VL-3B` | Tải model đúng path hoặc truyền `--ocr-model` |
-| Thiếu `doclayout_yolo` | Chưa cài DocLayout-YOLO editable | `pip install -e ./DocLayout-YOLO` |
-| Không activate được venv | PowerShell policy chặn | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| `Activate.ps1` bi chan | PowerShell policy | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| Thieu model YOLO | Clone/LFS chua du | Kiem tra `git lfs install`, clone lai neu can |
+| OCR nang cao bao thieu Qwen | Chua co `Qwen2.5-VL-3B` | Tai model ve root hoac truyen path model |
+| `Workspace Chat model` trong | Ollama chua keo model/chua chay | `ollama pull qwen2.5:7b`, reload UI |
+| Loi VRAM khi OCR | GPU yeu hoac bitsandbytes khong on dinh | Tat 4-bit (`PDF_PIPELINE_OCR_LOAD_4BIT=false`) |
 
 ---
 
-## 9) Tài liệu liên quan
+## 11) Tai lieu lien quan
 
-- Tổng quan dự án: `README.md`
-- Danh sách model cần tải: [MODELS_TO_DOWNLOAD.md](./MODELS_TO_DOWNLOAD.md)
-- Hướng dẫn chatbot chi tiết: `OCR_LLM/CHATBOT_SETUP.md`
+- Tong quan du an: `README.md`
+- Danh sach model: `docs/MODELS_TO_DOWNLOAD.md`
+- Chatbot setup chi tiet: `OCR_LLM/CHATBOT_SETUP.md`
+- PDF service stack: `services/pdf_processing/README.md`
