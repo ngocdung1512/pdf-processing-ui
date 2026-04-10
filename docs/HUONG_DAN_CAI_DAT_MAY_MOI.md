@@ -276,3 +276,13 @@ Neu buoc nao loi, tu sua va chay lai den khi dat day du 4 URL tren.
 - Danh sach model: `docs/MODELS_TO_DOWNLOAD.md`
 - Chatbot setup chi tiet: `OCR_LLM/CHATBOT_SETUP.md`
 - PDF service stack: `services/pdf_processing/README.md`
+
+---
+
+## 12) Prompt cuc ngan (1 doan de dung ngay)
+
+Neu ban muon prompt ngan gon de dan vao Cursor Agent o may moi, dung doan nay:
+
+```text
+Doc va lam dung theo docs/HUONG_DAN_CAI_DAT_MAY_MOI.md de cai dat full project tren may moi. Tu dong kiem tra toolchain (git/git-lfs/python/node/npm/ollama), tao conversion_env, cai PyTorch dung nhanh theo GPU (RTX 50 -> cu128 nightly, RTX 30/40 -> cu124, CPU-only -> skip torch rieng), pip install -r requirements.txt, cai DocLayout-YOLO editable, npm install, npm run chatbot:setup, kiem tra model Qwen2.5-VL-3B + doclayout_yolo_docstructbench_imgsz1024.pt, chay start-dev.bat, va chi bao hoan tat khi 4 URL sau deu OK: http://localhost:3000, http://localhost:8000/docs, http://localhost:3002, http://127.0.0.1:8001/health. Neu loi thi tu sua va chay lai den khi dat.
+```
