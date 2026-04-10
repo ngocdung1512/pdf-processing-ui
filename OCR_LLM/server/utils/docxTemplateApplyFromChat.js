@@ -10,36 +10,6 @@ const {
   extractFindReplacePairsFromChatLLM,
 } = require("./extractFindReplacePairsLLM");
 
-function extractExplicitReplacementTargets(userMessage = "") {
-  const text = String(userMessage || "").trim();
-  if (!text) return [];
-  const targets = new Set();
-  const patterns = [
-    /\b(?:thay|đổi)\s+["'“”‘’`]?.+?["'“”‘’`]?\s+(?:thành|sang)\s+["'“”‘’`]?(.+?)["'“”‘’`]?(?=$|[.;,\n])/giu,
-    /\breplace\s+["'“”‘’`]?.+?["'“”‘’`]?\s+with\s+["'“”‘’`]?(.+?)["'“”‘’`]?(?=$|[.;,\n])/giu,
-    /["'“”‘’`]?.+?["'“”‘’`]?\s*->\s*["'“”‘’`]?(.+?)["'“”‘’`]?(?=$|[.;,\n])/giu,
-  ];
-
-  for (const re of patterns) {
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      const v = String(m[1] || "")
-        .replace(/\s+(cho\s+tôi|giúp\s+tôi|nhé|nha|đi|với|please|pls)\s*$/iu, "")
-        .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, "")
-        .trim();
-      if (v) targets.add(v.toLowerCase());
-    }
-  }
-  return [...targets];
-}
-
-function replacementMatchesTargets(replaceValue = "", targets = []) {
-  if (!Array.isArray(targets) || targets.length === 0) return true;
-  const r = String(replaceValue || "").toLowerCase();
-  if (!r) return false;
-  return targets.some((t) => t && (r === t || r.includes(t)));
-}
-
 function extractPlainExcerptFromBuffer(buffer, maxLen = 24000) {
   const zip = new PizZip(buffer);
   const chunks = [];
@@ -185,7 +155,6 @@ async function applyDocxTemplateFromChat(templateBuffer, ctx = {}) {
   const pairedUserMessage = String(ctx.pairedUserMessage || "");
   const assistantMessage = String(ctx.assistantMessage || "");
   const conversationContext = String(ctx.conversationContext || "");
-  const explicitTargets = extractExplicitReplacementTargets(pairedUserMessage);
 
   const excerpt = extractPlainExcerptFromBuffer(templateBuffer);
   let pairs = await extractFindReplacePairsFromChatLLM(
@@ -213,17 +182,6 @@ async function applyDocxTemplateFromChat(templateBuffer, ctx = {}) {
 
   for (let i = 0; i < pairs.length; i++) {
     const pair = pairs[i];
-    if (!replacementMatchesTargets(pair.replace, explicitTargets)) {
-      const e = new Error(
-        "Inferred replacement does not match your explicit replacement target."
-      );
-      e.code = "REPLACE_TARGET_MISMATCH";
-      e.pairIndex = i;
-      e.inferredPair = pair;
-      e.explicitTargets = explicitTargets;
-      throw e;
-    }
-
     const variants = expandFindReplaceCandidatesForDocx(
       pair.find,
       pair.replace

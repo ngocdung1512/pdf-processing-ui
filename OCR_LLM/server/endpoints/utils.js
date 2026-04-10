@@ -338,16 +338,6 @@ function utilEndpoints(app) {
             textSnippetsFromFile: e.textSnippetsFromFile || [],
           });
         }
-        if (e.code === "REPLACE_TARGET_MISMATCH") {
-          return response.status(422).json({
-            success: false,
-            code: "REPLACE_TARGET_MISMATCH",
-            error: e.message,
-            pairIndex: e.pairIndex,
-            inferredPair: e.inferredPair || null,
-            explicitTargets: e.explicitTargets || [],
-          });
-        }
         console.error("[docx-template-apply-from-chat]", e.message);
         return response.status(500).json({
           success: false,
